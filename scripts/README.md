@@ -1,6 +1,155 @@
-# Database Migration Scripts
+# Database Scripts
 
-This directory contains migration scripts for both PostgreSQL and BigQuery databases.
+This directory contains migration and seeding scripts for PostgreSQL and BigQuery databases.
+
+## Table of Contents
+
+1. [Database Seeder](#database-seeder) - Generate mock data for testing
+2. [PostgreSQL Migration](#postgresql-migration) - PostgreSQL schema setup
+3. [BigQuery Migration](#bigquery-migration) - BigQuery schema setup
+
+---
+
+## Database Seeder (`seed_data.py`)
+
+Generates comprehensive mock data for the AURA underwriting system, including organizations, users, underwritings, purchased processors, documents, executions, and factors.
+
+### Quick Start
+
+```bash
+# Generate mock data and display summary
+python scripts/seed_data.py
+
+# Export as JSON for easy access
+python scripts/seed_data.py --export-json
+
+# Export as SQL for PostgreSQL
+python scripts/seed_data.py --export-sql --database postgresql
+
+# Clear existing data before seeding
+python scripts/seed_data.py --clear
+```
+
+### Features
+
+- ✅ **Complete Mock Data**: Organizations, users, underwritings, processors, documents, executions, factors
+- ✅ **Realistic Data**: Valid UUIDs, timestamps, business data, processor configurations
+- ✅ **Multiple Export Formats**: JSON and SQL export options
+- ✅ **Flexible**: Support for both PostgreSQL and BigQuery
+- ✅ **Summary Output**: Clear overview of generated data
+
+### Generated Data
+
+| Entity | Count | Description |
+|--------|-------|-------------|
+| Organizations | 3 | Acme Financial Services, TechLend Capital, SmallBiz Funding Co |
+| Accounts | 4 | Manager, 2 Underwriters, Viewer |
+| Roles | 3 | MANAGER, UNDERWRITER, VIEWER |
+| Underwritings | 3 | TechStartup ($150k), Retail Shop ($75k), Restaurant ($200k) |
+| Purchased Processors | 5 | Bank Statement, Credit Check, Identity, Business Verification, CLEAR |
+| Underwriting Processors | 12 | 4 processors × 3 underwritings |
+| Documents | 8 | Bank statements, driver's licenses, voided checks, tax returns |
+| Document Revisions | 8 | One revision per document |
+| Processor Executions | 2 | Completed executions with outputs |
+| Factors | 4 | Extracted factors from executions |
+
+### Purchased Processors Details
+
+1. **Bank Statement Analyzer**
+   - Cost: $5.00 per execution
+   - Config: `minimum_document: 3`, `analysis_window_months: 6`, `nsf_threshold_amount: 35.00`
+   - Auto-execution: Enabled
+
+2. **Experian Business Credit Check**
+   - Cost: $15.00 per execution
+   - Config: `include_trade_lines: true`, `credit_score_threshold: 600`
+   - Auto-execution: Enabled
+
+3. **Driver's License Verification**
+   - Cost: $3.00 per document
+   - Config: `require_photo: true`, `check_expiration: true`, `min_age: 18`
+   - Auto-execution: Enabled
+
+4. **Business Registration Verification**
+   - Cost: $8.00 per execution
+   - Config: `verify_ein: true`, `check_state_registry: true`
+   - Auto-execution: Enabled
+
+5. **Thomson Reuters CLEAR Report**
+   - Cost: $25.00 per execution
+   - Config: `include_background_check: true`, `include_business_search: true`
+   - Auto-execution: Disabled (manual only)
+
+### Command-Line Options
+
+```bash
+python scripts/seed_data.py [OPTIONS]
+
+Options:
+  --database {postgresql,bigquery}  Database type (default: postgresql)
+  --clear                            Clear existing data before seeding
+  --export-sql                       Export as SQL file
+  --export-json                      Export as JSON file
+  -h, --help                         Show help message
+```
+
+### Example Output
+
+```
+╔═══════════════════════════════════════════════════════════════════════╗
+║                                                                       ║
+║   🌱 AURA Database Seeder 🌱                                         ║
+║                                                                       ║
+╚═══════════════════════════════════════════════════════════════════════╝
+🌱 Seeding database with mock data...
+
+📊 Creating organizations...
+   ✓ Created 3 organizations
+
+👥 Creating user accounts...
+   ✓ Created 4 user accounts
+
+🔧 Creating purchased processors...
+   ✓ Created 5 purchased processors
+
+📋 Creating underwritings...
+   ✓ Created 3 underwritings
+
+✅ Mock data generation complete!
+
+📋 Underwritings:
+   • A-102224-001 - TechStartup Solutions Inc ($150,000.00) [processing]
+   • A-102224-002 - Downtown Retail Shop LLC ($75,000.00) [passed]
+   • A-102224-003 - Golden Dragon Restaurant Group Inc ($200,000.00) [created]
+```
+
+### JSON Export Structure
+
+The JSON export (`seed_data.json`) contains all entities with proper serialization:
+
+```json
+{
+  "organizations": [...],
+  "accounts": [...],
+  "roles": [...],
+  "underwritings": [...],
+  "purchased_processors": [...],
+  "underwriting_processors": [...],
+  "documents": [...],
+  "document_revisions": [...],
+  "processor_executions": [...],
+  "factors": [...]
+}
+```
+
+### Use Cases
+
+1. **Testing**: Load mock data for integration tests
+2. **Development**: Populate local database for UI development
+3. **Demos**: Create realistic data for demonstrations
+4. **CI/CD**: Seed test databases in pipelines
+
+---
 
 ## PostgreSQL Migration (`postgresql-init/migrate.py`)
 

@@ -135,3 +135,7 @@ dmypy.json
 cython_debug/
 
 .vscode/
+
+# Generated seed data files
+scripts/seed_data.json
+scripts/seed_data_*.sql
