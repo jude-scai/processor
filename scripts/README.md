@@ -46,6 +46,9 @@ python scripts/seed_data.py --clear
 | Accounts | 4 | Manager, 2 Underwriters, Viewer |
 | Roles | 3 | MANAGER, UNDERWRITER, VIEWER |
 | Underwritings | 3 | TechStartup ($150k), Retail Shop ($75k), Restaurant ($200k) |
+| Owners | 5 | Beneficial owners with FICO scores, ownership %, addresses |
+| Owner Addresses | 5 | Residential addresses for all owners |
+| Merchant Addresses | 3 | Business addresses for all underwritings |
 | Purchased Processors | 5 | Bank Statement, Credit Check, Identity, Business Verification, CLEAR |
 | Underwriting Processors | 12 | 4 processors × 3 underwritings |
 | Documents | 8 | Bank statements, driver's licenses, voided checks, tax returns |
