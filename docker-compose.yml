@@ -1,0 +1,110 @@
+services:
+  # PostgreSQL - Primary Database (reliable, fast)
+  postgres:
+    image: postgres:16-alpine
+    container_name: aura-postgres
+    environment:
+      POSTGRES_DB: aura_underwriting
+      POSTGRES_USER: aura_user
+      POSTGRES_PASSWORD: aura_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgresql-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura_user -d aura_underwriting"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # BigQuery Emulator - Alternative database (experimental)
+  bigquery:
+    image: ghcr.io/goccy/bigquery-emulator:latest
+    container_name: aura-bigquery
+    platform: linux/amd64
+    ports:
+      - "9050:9050"
+    command:
+      - --project=aura-project
+      - --dataset=underwriting_data
+      - --port=9050
+      - --log-level=info
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9050"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    profiles:
+      - bigquery  # Only starts if --profile bigquery is specified
+
+  # Google Cloud Storage Emulator
+  gcs:
+    image: fsouza/fake-gcs-server:latest
+    container_name: aura-gcs
+    ports:
+      - "4443:4443"
+    command:
+      - -scheme=http
+      - -port=4443
+      - -external-url=http://localhost:4443
+    volumes:
+      - gcs_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4443/storage/v1/b"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Google Cloud Pub/Sub Emulator
+  # Official Google Cloud SDK image with emulators
+  # Source: https://cloud.google.com/sdk/docs/downloads-docker
+  pubsub:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    container_name: aura-pubsub
+    ports:
+      - "8085:8085"
+    command:
+      - gcloud
+      - beta
+      - emulators
+      - pubsub
+      - start
+      - --host-port=0.0.0.0:8085
+      - --project=aura-project
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      - PUBSUB_EMULATOR_HOST=localhost:8085
+      - PUBSUB_PROJECT_ID=aura-project
+
+  # Redis - Caching Layer
+  redis:
+    image: redis:7-alpine
+    container_name: aura-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+  gcs_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: aura-network
+
