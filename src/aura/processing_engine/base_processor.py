@@ -10,22 +10,24 @@ import hashlib
 import json
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
-from src.aura.processing_engine.exceptions import (
+from .exceptions import (
     PrevalidationError,
     InputValidationError,
     TransformationError,
     FactorExtractionError,
     ResultValidationError,
 )
-from src.aura.processing_engine.models import (
+from .models import (
     ExecutionStatus,
     ProcessorType,
     ProcessingResult,
     ExecutionPayload,
     ValidationResult,
 )
+from .repositories.processor_repository import ProcessorRepository
+from .repositories.execution_repository import ExecutionRepository
 
 
 class BaseProcessor(ABC):
@@ -59,8 +61,18 @@ class BaseProcessor(ABC):
     PROCESSOR_TRIGGERS: dict[str, list[str]] = {}
     CONFIG: dict[str, Any] = {}
 
-    def __init__(self):
-        """Initialize the processor with cost tracking."""
+    def __init__(
+        self,
+        processor_repo: Optional[ProcessorRepository] = None,
+        execution_repo: Optional[ExecutionRepository] = None
+    ):
+        """
+        Initialize the processor with cost tracking and repository connections.
+
+        Args:
+            processor_repo: Repository for processor configuration operations
+            execution_repo: Repository for execution management operations
+        """
         self._total_cost: float = 0.0
         self._cost_breakdown: dict[str, float] = {}
         self._execution_id: str | None = None
@@ -68,23 +80,51 @@ class BaseProcessor(ABC):
         self._document_revision_ids: list[str] = []
         self._document_ids_hash: str | None = None
 
+        # Repository connections
+        self._processor_repo = processor_repo
+        self._execution_repo = execution_repo
+
     # =====================================================================
     # CONFIGURATION
     # =====================================================================
 
-    @classmethod
-    def get_config(cls, purchased_processor: Any) -> dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """
         Get effective configuration by merging defaults with database overrides.
 
-        Args:
-            purchased_processor: Database record with config overrides
+        Configuration resolution order (right-side precedence):
+        1. System defaults (self.CONFIG from code)
+        2. Tenant overrides (purchased_processors.config)
+        3. Underwriting overrides (underwriting_processors.config_override)
+
+        Requires that the processor was initialized with processor_repo and
+        _underwriting_processor_id was set.
 
         Returns:
-            Merged configuration dictionary
+            Merged configuration dictionary with all levels applied
+
+        Raises:
+            ValueError: If processor_repo or underwriting_processor_id not set
         """
-        default_config = cls.CONFIG if hasattr(cls, "CONFIG") else {}
-        db_config = getattr(purchased_processor, "config", None) or {}
+        if not self._processor_repo:
+            raise ValueError(
+                "Processor repository not initialized. "
+                "Pass processor_repo to __init__() to enable configuration fetching."
+            )
+
+        if not self._underwriting_processor_id:
+            raise ValueError(
+                "Underwriting processor ID not set. "
+                "Set _underwriting_processor_id before calling get_config()."
+            )
+
+        # Start with system defaults from processor class
+        default_config = self.CONFIG if hasattr(self, "CONFIG") else {}
+
+        # Get effective config from database (tenant + underwriting overrides)
+        db_config = self._processor_repo.get_effective_config(self._underwriting_processor_id)
+
+        # Merge: system defaults < database config
         return {**default_config, **db_config}
 
     # =====================================================================

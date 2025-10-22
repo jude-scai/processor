@@ -6,9 +6,14 @@ of the same type together (e.g., all bank statements for revenue analysis).
 """
 
 from typing import Any
+import sys
+from pathlib import Path
 
-from src.aura.processing_engine.base_processor import BaseProcessor
-from src.aura.processing_engine.models import ProcessorType, ExecutionPayload, ValidationResult
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "src"))
+
+from aura.processing_engine.base_processor import BaseProcessor
+from aura.processing_engine.models import ProcessorType, ExecutionPayload, ValidationResult
 
 
 class StipulationProcessor(BaseProcessor):

@@ -15,22 +15,30 @@ Tests cover:
 
 import pytest
 from datetime import datetime
+from unittest.mock import Mock, MagicMock
+import sys
+from pathlib import Path
 
-from src.aura.processing_engine.models import (
+# Add src to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "src"))
+
+from aura.processing_engine.models import (
     ExecutionStatus,
     ProcessorType,
     ExecutionPayload,
     ValidationResult,
 )
-from src.aura.processing_engine.exceptions import (
+from aura.processing_engine.exceptions import (
     InputValidationError,
     TransformationError,
     FactorExtractionError,
     ResultValidationError,
 )
-from tests.unit.processing_engine.processors.application_processor import ApplicationProcessor
-from tests.unit.processing_engine.processors.stipulation_processor import StipulationProcessor
-from tests.unit.processing_engine.processors.document_processor import DocumentProcessor
+from aura.processing_engine.repositories.processor_repository import ProcessorRepository
+from aura.processing_engine.repositories.execution_repository import ExecutionRepository
+from .processors.application_processor import ApplicationProcessor
+from .processors.stipulation_processor import StipulationProcessor
+from .processors.document_processor import DocumentProcessor
 
 
 class TestBaseProcessorConfiguration:
@@ -63,6 +71,88 @@ class TestBaseProcessorConfiguration:
         assert "documents_list" in processor.PROCESSOR_TRIGGERS
         assert processor.CONFIG.get("require_photo") is True
 
+    def test_get_config_with_repository(self):
+        """Test get_config uses repository to fetch effective configuration."""
+        # Create mock repository
+        mock_repo = Mock(spec=ProcessorRepository)
+        mock_repo.get_effective_config.return_value = {
+            "minimum_document": 5,  # Override from database
+            "analysis_window_months": 12,  # Override from database
+        }
+
+        # Create processor with repository
+        processor = StipulationProcessor(processor_repo=mock_repo)
+        processor._underwriting_processor_id = "uwp_123"
+
+        # Call get_config
+        config = processor.get_config()
+
+        # Verify repository was called
+        mock_repo.get_effective_config.assert_called_once_with("uwp_123")
+
+        # Verify config merge (system defaults + database overrides)
+        assert config["minimum_document"] == 5  # DB override
+        assert config["analysis_window_months"] == 12  # DB override
+
+    def test_get_config_merges_system_defaults_with_database(self):
+        """Test that get_config properly merges system defaults with DB config."""
+        mock_repo = Mock(spec=ProcessorRepository)
+        mock_repo.get_effective_config.return_value = {
+            "require_ein": False,  # Override system default
+            "custom_field": "custom_value",  # New field from DB
+        }
+
+        processor = ApplicationProcessor(processor_repo=mock_repo)
+        processor._underwriting_processor_id = "uwp_456"
+
+        config = processor.get_config()
+
+        # System default that wasn't overridden should still be present
+        assert "require_industry" in config
+
+        # Database override should take precedence
+        assert config["require_ein"] is False
+
+        # New field from database should be included
+        assert config["custom_field"] == "custom_value"
+
+    def test_get_config_with_multiple_calls(self):
+        """Test get_config can be called multiple times."""
+        mock_processor_repo = Mock(spec=ProcessorRepository)
+        mock_processor_repo.get_effective_config.return_value = {
+            "minimum_document": 4
+        }
+
+        processor = StipulationProcessor(processor_repo=mock_processor_repo)
+        processor._underwriting_processor_id = "uwp_789"
+
+        # Call multiple times
+        config1 = processor.get_config()
+        config2 = processor.get_config()
+
+        # Both should return same config
+        assert config1 == config2
+        assert config1["minimum_document"] == 4
+
+        # Verify repository was called twice (once per call)
+        assert mock_processor_repo.get_effective_config.call_count == 2
+
+    def test_get_config_raises_without_repo(self):
+        """Test get_config raises error if repo not initialized."""
+        processor = ApplicationProcessor()
+        processor._underwriting_processor_id = "uwp_123"
+
+        with pytest.raises(ValueError, match="Processor repository not initialized"):
+            processor.get_config()
+
+    def test_get_config_raises_without_underwriting_processor_id(self):
+        """Test get_config raises error if underwriting_processor_id not set."""
+        mock_repo = Mock(spec=ProcessorRepository)
+        processor = ApplicationProcessor(processor_repo=mock_repo)
+
+        with pytest.raises(ValueError, match="Underwriting processor ID not set"):
+            processor.get_config()
+
 
 class TestApplicationProcessor:
     """Comprehensive tests for APPLICATION type processor."""
@@ -89,7 +179,7 @@ class TestApplicationProcessor:
     @pytest.fixture
     def processor(self):
         """Create processor instance."""
-        return TestApplicationProcessor()
+        return ApplicationProcessor()
 
     def test_successful_execution(self, processor, valid_payload):
         """Test successful APPLICATION processor execution."""
@@ -217,7 +307,7 @@ class TestStipulationProcessor:
     @pytest.fixture
     def processor(self):
         """Create processor instance."""
-        return TestStipulationProcessor()
+        return StipulationProcessor()
 
     def test_successful_execution(self, processor, valid_payload):
         """Test successful STIPULATION processor execution."""
@@ -385,7 +475,7 @@ class TestDocumentProcessor:
     @pytest.fixture
     def processor(self):
         """Create processor instance."""
-        return TestDocumentProcessor()
+        return DocumentProcessor()
 
     def test_successful_execution(self, processor, valid_payload):
         """Test successful DOCUMENT processor execution."""
@@ -476,7 +566,7 @@ class TestExecutionPipeline:
 
     def test_phase_order_application(self):
         """Test phases execute in correct order for APPLICATION processor."""
-        processor = TestApplicationProcessor()
+        processor = ApplicationProcessor()
 
         # Track method calls
         calls = []
@@ -523,7 +613,7 @@ class TestExecutionPipeline:
 
     def test_atomic_failure_in_transformation(self):
         """Test that transformation failure stops execution immediately."""
-        processor = TestApplicationProcessor()
+        processor = ApplicationProcessor()
 
         # Create invalid payload that will fail transformation
         invalid_payload = ExecutionPayload(
@@ -545,7 +635,7 @@ class TestErrorHandling:
 
     def test_error_contains_phase_information(self):
         """Test that errors include phase information."""
-        processor = TestApplicationProcessor()
+        processor = ApplicationProcessor()
 
         invalid_payload = ExecutionPayload(
             underwriting_id="uw_err_001",
@@ -565,7 +655,7 @@ class TestProcessingResult:
 
     def test_result_has_all_required_fields(self):
         """Test ProcessingResult contains all expected fields."""
-        processor = TestApplicationProcessor()
+        processor = ApplicationProcessor()
 
         payload = ExecutionPayload(
             underwriting_id="uw_result_001",
@@ -598,7 +688,7 @@ class TestProcessingResult:
 
     def test_result_to_dict_serialization(self):
         """Test ProcessingResult can be serialized to dict."""
-        processor = TestApplicationProcessor()
+        processor = ApplicationProcessor()
 
         payload = ExecutionPayload(
             underwriting_id="uw_serial_001",
