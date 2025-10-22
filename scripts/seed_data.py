@@ -28,15 +28,21 @@ import random
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-# Database connection will be added when implementing actual DB operations
-# For now, we'll generate the INSERT statements
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
+# Database imports
+import psycopg2
+from psycopg2.extras import Json
 
 
 class DataSeeder:
     """Generates mock data for the AURA underwriting system."""
 
-    def __init__(self, clear_existing=False):
+    def __init__(self, clear_existing=False, db_connection=None):
         self.clear_existing = clear_existing
+        self.db_conn = db_connection
         self.data = {
             "organizations": [],
             "accounts": [],
@@ -418,14 +424,14 @@ class DataSeeder:
 
         self.data["underwritings"] = underwritings
         print(f"   ✓ Created {len(underwritings)} underwritings")
-    
+
     def seed_owners(self):
         """Create mock beneficial owners for underwritings."""
         print("\n👨‍💼 Creating beneficial owners...")
-        
+
         creator = self.data["accounts"][1]
         owners = []
-        
+
         # Owner data for each underwriting
         owners_data = [
             # TechStartup Solutions Inc owners
@@ -497,7 +503,7 @@ class DataSeeder:
                 },
             ],
         ]
-        
+
         for idx, uw in enumerate(self.data["underwritings"]):
             for owner_data in owners_data[idx]:
                 owner = {
@@ -521,18 +527,18 @@ class DataSeeder:
                     "updated_by": creator["id"],
                 }
                 owners.append(owner)
-        
+
         self.data["owners"] = owners
         print(f"   ✓ Created {len(owners)} beneficial owners")
-    
+
     def seed_addresses(self):
         """Create addresses for merchants and owners."""
         print("\n🏠 Creating addresses...")
-        
+
         creator = self.data["accounts"][1]
         merchant_addresses = []
         owner_addresses = []
-        
+
         # Merchant addresses
         merchant_addrs = [
             {
@@ -557,7 +563,7 @@ class DataSeeder:
                 "zip": "78701",
             },
         ]
-        
+
         for idx, uw in enumerate(self.data["underwritings"]):
             addr_data = merchant_addrs[idx]
             addr = {
@@ -574,7 +580,7 @@ class DataSeeder:
                 "updated_by": creator["id"],
             }
             merchant_addresses.append(addr)
-        
+
         # Owner addresses
         owner_addrs = [
             # TechStartup owners
@@ -618,7 +624,7 @@ class DataSeeder:
                 },
             ],
         ]
-        
+
         owner_idx = 0
         for uw_idx, uw in enumerate(self.data["underwritings"]):
             uw_owners = [o for o in self.data["owners"] if o["underwriting_id"] == uw["id"]]
@@ -638,7 +644,7 @@ class DataSeeder:
                     "updated_by": creator["id"],
                 }
                 owner_addresses.append(addr)
-        
+
         self.data["merchant_addresses"] = merchant_addresses
         self.data["owner_addresses"] = owner_addresses
         print(f"   ✓ Created {len(merchant_addresses)} merchant addresses and {len(owner_addresses)} owner addresses")
@@ -716,6 +722,7 @@ class DataSeeder:
                 revision = {
                     "id": rev_id,
                     "document_id": doc_id,
+                    "revision": 1,  # Revision number (starting at 1)
                     "gcs_uri": f"gs://aura-documents/{uw['id']}/{doc_type}_{rev_id}.pdf",
                     "ocr_gcs_uri": f"gs://aura-documents/{uw['id']}/{doc_type}_{rev_id}_ocr.json",
                     "filename": f"{doc_name.replace(' ', '_')}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf",
@@ -855,13 +862,13 @@ class DataSeeder:
             print(f"\n📋 Underwritings:")
             for uw in self.data["underwritings"]:
                 print(f"   • {uw['serial_number']} - {uw['merchant_name']} (${uw['request_amount']:,.2f}) [{uw['status']}]")
-        
+
         if self.data["owners"]:
             print(f"\n👨‍💼 Beneficial Owners:")
             for owner in self.data["owners"][:5]:
                 primary = "PRIMARY" if owner["primary_owner"] else "CO-OWNER"
                 print(f"   • {owner['first_name']} {owner['last_name']} - {owner['ownership_percent']}% ({primary}) FICO: {owner['fico_score']}")
-        
+
         print("\n" + "="*70)
 
     def export_sql(self, database_type="postgresql"):
@@ -936,6 +943,266 @@ class DataSeeder:
         print(f"   ✓ JSON file generated: {output_file}")
         return output_file
 
+    def insert_to_database(self):
+        """Insert generated data into the database."""
+        if not self.db_conn:
+            print("\n❌ No database connection provided. Skipping database insertion.")
+            return False
+
+        print("\n💾 Inserting data into database...")
+
+        try:
+            cursor = self.db_conn.cursor()
+
+            # Clear existing data if requested
+            if self.clear_existing:
+                print("   🗑️  Clearing existing data...")
+                tables = [
+                    "factor", "processor_executions", "document_revision", "document",
+                    "underwriting_processors", "organization_processors",
+                    "owner_address", "owner", "merchant_address", "underwriting",
+                    "account", "role", "organization"
+                ]
+                for table in tables:
+                    cursor.execute(f"TRUNCATE TABLE {table} CASCADE;")
+                print("   ✓ Existing data cleared")
+
+            # Insert organizations
+            print("   📊 Inserting organizations...")
+            for org in self.data["organizations"]:
+                cursor.execute("""
+                    INSERT INTO organization (id, name, status, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (org["id"], org["name"], org["status"], org["created_at"], org["updated_at"]))
+
+            # Insert roles
+            print("   👤 Inserting roles...")
+            for role in self.data["roles"]:
+                cursor.execute("""
+                    INSERT INTO role (id, name, description, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (role["id"], role["name"], role["description"],
+                      role["created_at"], role["updated_at"]))
+
+            # Insert accounts
+            print("   👥 Inserting accounts...")
+            for acc in self.data["accounts"]:
+                cursor.execute("""
+                    INSERT INTO account (
+                        id, organization_id, firebase_uid, email, first_name, last_name,
+                        status, created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (acc["id"], acc["organization_id"], acc["firebase_uid"], acc["email"],
+                      acc["first_name"], acc["last_name"], acc["status"],
+                      acc["created_at"], acc["updated_at"]))
+
+            # Insert underwritings
+            print("   📋 Inserting underwritings...")
+            for uw in self.data["underwritings"]:
+                cursor.execute("""
+                    INSERT INTO underwriting (
+                        id, organization_id, serial_number, status, application_type,
+                        request_amount, request_date, purpose,
+                        iso_ref_id, iso_name, iso_email, iso_phone,
+                        representative_ref_id, representative_first_name, representative_last_name,
+                        representative_email, representative_phone_mobile, representative_phone_work,
+                        merchant_ref_id, merchant_name, merchant_dba_name, merchant_email,
+                        merchant_phone, merchant_website, merchant_industry, merchant_ein,
+                        merchant_entity_type, merchant_incorporation_date, merchant_state_of_incorporation,
+                        created_at, updated_at, created_by, updated_by
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    uw["id"], uw["organization_id"], uw["serial_number"], uw["status"],
+                    uw["application_type"], uw["request_amount"], uw["request_date"], uw["purpose"],
+                    uw["iso_ref_id"], uw["iso_name"], uw["iso_email"], uw["iso_phone"],
+                    uw["representative_ref_id"], uw["representative_first_name"], uw["representative_last_name"],
+                    uw["representative_email"], uw["representative_phone_mobile"], uw.get("representative_phone_work"),
+                    uw["merchant_ref_id"], uw["merchant_name"], uw["merchant_dba_name"], uw["merchant_email"],
+                    uw["merchant_phone"], uw["merchant_website"], uw["merchant_industry"], uw["merchant_ein"],
+                    uw["merchant_entity_type"], uw["merchant_incorporation_date"], uw["merchant_state_of_incorporation"],
+                    uw["created_at"], uw["updated_at"], uw["created_by"], uw["updated_by"]
+                ))
+
+            # Insert owners
+            print("   👨‍💼 Inserting owners...")
+            for owner in self.data["owners"]:
+                cursor.execute("""
+                    INSERT INTO owner (
+                        id, underwriting_id, first_name, last_name, email,
+                        phone_mobile, phone_work, phone_home, birthday, fico_score, ssn,
+                        enabled, ownership_percent, primary_owner,
+                        created_at, updated_at, created_by, updated_by
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    owner["id"], owner["underwriting_id"], owner["first_name"], owner["last_name"],
+                    owner["email"], owner["phone_mobile"], owner.get("phone_work"), owner.get("phone_home"),
+                    owner["birthday"], owner["fico_score"], owner["ssn"], owner["enabled"],
+                    owner["ownership_percent"], owner["primary_owner"],
+                    owner["created_at"], owner["updated_at"], owner["created_by"], owner["updated_by"]
+                ))
+
+            # Insert owner addresses
+            print("   🏠 Inserting owner addresses...")
+            for addr in self.data["owner_addresses"]:
+                cursor.execute("""
+                    INSERT INTO owner_address (
+                        id, owner_id, addr_1, addr_2, city, state, zip,
+                        created_at, updated_at, created_by, updated_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    addr["id"], addr["owner_id"], addr["addr_1"], addr["addr_2"],
+                    addr["city"], addr["state"], addr["zip"],
+                    addr["created_at"], addr["updated_at"], addr["created_by"], addr["updated_by"]
+                ))
+
+            # Insert merchant addresses
+            print("   🏢 Inserting merchant addresses...")
+            for addr in self.data["merchant_addresses"]:
+                cursor.execute("""
+                    INSERT INTO merchant_address (
+                        id, underwriting_id, addr_1, addr_2, city, state, zip,
+                        created_at, updated_at, created_by, updated_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    addr["id"], addr["underwriting_id"], addr["addr_1"], addr["addr_2"],
+                    addr["city"], addr["state"], addr["zip"],
+                    addr["created_at"], addr["updated_at"], addr["created_by"], addr["updated_by"]
+                ))
+
+            # Insert purchased processors
+            print("   🔧 Inserting purchased processors...")
+            for pp in self.data["purchased_processors"]:
+                cursor.execute("""
+                    INSERT INTO organization_processors (
+                        id, organization_id, processor, name, auto, status, config,
+                        price_amount, price_unit, price_currency,
+                        purchased_at, purchased_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    pp["id"], pp["organization_id"], pp["processor"], pp["name"],
+                    pp["auto"], pp["status"], Json(pp["config"]),
+                    pp["price_amount"], pp["price_unit"], pp["price_currency"],
+                    pp["purchased_at"], pp["purchased_by"]
+                ))
+
+            # Insert underwriting processors
+            print("   ⚙️  Inserting underwriting processors...")
+            for up in self.data["underwriting_processors"]:
+                # Cast current_executions_list to UUID array
+                exec_list = up["current_executions_list"] if up["current_executions_list"] else []
+                cursor.execute("""
+                    INSERT INTO underwriting_processors (
+                        id, organization_id, underwriting_id, organization_processor_id,
+                        processor, name, auto, enabled, config_override, effective_config,
+                        current_executions_list, created_at, created_by, updated_at, updated_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::uuid[], %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    up["id"], up["organization_id"], up["underwriting_id"], up.get("purchased_processor_id"),
+                    up["processor"], up["name"], up["auto"], up["enabled"],
+                    Json(up["config_override"]), Json(up["effective_config"]),
+                    exec_list, up["created_at"], up["created_by"],
+                    up["updated_at"], up["updated_by"]
+                ))
+
+            # Insert documents
+            print("   📄 Inserting documents...")
+            for doc in self.data["documents"]:
+                cursor.execute("""
+                    INSERT INTO document (
+                        id, organization_id, underwriting_id, status, current_revision_id,
+                        stipulation_type, classification_confidence,
+                        created_at, created_by, updated_at, updated_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    doc["id"], doc["organization_id"], doc["underwriting_id"], doc["status"],
+                    doc["current_revision_id"], doc["stipulation_type"], doc["classification_confidence"],
+                    doc["created_at"], doc["created_by"], doc["updated_at"], doc["updated_by"]
+                ))
+
+            # Insert document revisions
+            print("   📑 Inserting document revisions...")
+            for rev in self.data["document_revisions"]:
+                cursor.execute("""
+                    INSERT INTO document_revision (
+                        id, document_id, revision, gcs_uri, ocr_gcs_uri, filename, mime_type,
+                        size_bytes, quality_score, page_count,
+                        created_at, created_by, updated_at, updated_by
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    rev["id"], rev["document_id"], rev["revision"], rev["gcs_uri"], rev["ocr_gcs_uri"],
+                    rev["filename"], rev["mime_type"], rev["size_bytes"],
+                    rev["quality_score"], rev["page_count"],
+                    rev["created_at"], rev["created_by"], rev["updated_at"], rev["updated_by"]
+                ))
+
+            # Insert processor executions
+            print("   🔄 Inserting processor executions...")
+            for exe in self.data["processor_executions"]:
+                cursor.execute("""
+                    INSERT INTO processor_executions (
+                        id, organization_id, underwriting_id, underwriting_processor_id,
+                        processor, status, enabled, payload, payload_hash, factors_delta,
+                        run_cost_cents, currency, started_at, completed_at,
+                        created_at, updated_at
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    exe["id"], exe["organization_id"], exe["underwriting_id"],
+                    exe["underwriting_processor_id"], exe["processor"], exe["status"],
+                    exe["enabled"], Json(exe["payload"]), exe["payload_hash"],
+                    Json(exe["factors_delta"]),
+                    exe["run_cost_cents"], exe["currency"], exe["started_at"], exe["completed_at"],
+                    exe["created_at"], exe["updated_at"]
+                ))
+
+            # Insert factors
+            print("   📊 Inserting factors...")
+            for factor in self.data["factors"]:
+                cursor.execute("""
+                    INSERT INTO factor (
+                        id, organization_id, underwriting_id, factor_key, value, unit,
+                        source, status, underwriting_processor_id, execution_id,
+                        created_at, updated_at
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (id) DO NOTHING
+                """, (
+                    factor["id"], factor["organization_id"], factor["underwriting_id"],
+                    factor["factor_key"], Json(factor["value"]), factor["unit"],
+                    factor["source"], factor["status"], factor["underwriting_processor_id"],
+                    factor["execution_id"], factor["created_at"], factor["updated_at"]
+                ))
+
+            # Commit transaction
+            self.db_conn.commit()
+            cursor.close()
+
+            print("   ✅ All data inserted successfully!")
+            return True
+
+        except Exception as e:
+            print(f"   ❌ Error inserting data: {e}")
+            if self.db_conn:
+                self.db_conn.rollback()
+            return False
+
 
 def main():
     """Main entry point."""
@@ -970,7 +1237,29 @@ def main():
     print("║                                                                       ║")
     print("╚═══════════════════════════════════════════════════════════════════════╝")
 
-    seeder = DataSeeder(clear_existing=args.clear)
+    # Connect to database if not exporting
+    db_conn = None
+    if not args.export_sql and not args.export_json:
+        if args.database == "postgresql":
+            print("\n🔌 Connecting to PostgreSQL...")
+            try:
+                db_conn = psycopg2.connect(
+                    host=os.getenv("POSTGRES_HOST", "localhost"),
+                    port=int(os.getenv("POSTGRES_PORT", "5432")),
+                    database=os.getenv("POSTGRES_DB", "aura_underwriting"),
+                    user=os.getenv("POSTGRES_USER", "aura_user"),
+                    password=os.getenv("POSTGRES_PASSWORD", "aura_password")
+                )
+                print("   ✓ Connected to PostgreSQL")
+            except Exception as e:
+                print(f"   ❌ Connection failed: {e}")
+                print("   💡 Make sure Docker services are running: docker compose up -d")
+                sys.exit(1)
+        else:
+            print("\n❌ BigQuery seeding not implemented yet.")
+            sys.exit(1)
+
+    seeder = DataSeeder(clear_existing=args.clear, db_connection=db_conn)
     seeder.seed_all()
 
     if args.export_sql:
@@ -978,6 +1267,12 @@ def main():
 
     if args.export_json:
         seeder.export_json()
+
+    # Insert to database if connected
+    if db_conn:
+        seeder.insert_to_database()
+        db_conn.close()
+        print("\n   🔌 Database connection closed")
 
     print("\n✨ Seeding complete! Ready for testing.\n")
 
