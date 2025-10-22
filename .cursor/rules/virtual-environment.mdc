@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+
+Always use the virtual environment for this project.
+
+The virtual environment is located in the root of the project and is called `.venv`.
+
+The virtual environment is created using the `.venv` module.
+
+The virtual environment is activated using the `source .venv/bin/activate` command.
+
+The virtual environment is deactivated using the `deactivate` command.

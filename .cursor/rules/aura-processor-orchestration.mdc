@@ -1,0 +1,1040 @@
+---
+alwaysApply: true
+---
+
+# Overview
+
+This module implements the Pub/Sub subscriber for underwriting processing orchestration. It coordinates processor execution across multiple workflows, handling document processing, execution management, and rollback operations. All purchased processors are evaluated, filtered by triggers, executed, and their results are persisted and consolidated into final factors.
+
+## Listened Events
+
+The orchestrator subscribes to the following Pub/Sub topics:
+
+- **`underwriting.updated`** - (Workflow 1) Triggers automatic processor execution when underwriting data is updated
+- **`document.analyzed`** - (Workflow 1) Triggers automatic processor execution when documents are analyzed
+- **`underwriting.processor.execute`** - (Workflow 2) Manual processor execution requests
+- **`underwriting.processor.enable`** - (Workflow ?) Enable a disabled processor
+- **`underwriting.processor.disable`** - (Workflow ?) Disable a processor
+- **`underwriting.processor.consolidation`** - (Workflow 3) Consolidation-only requests without execution
+- **`underwriting.execution.activate`** - (Workflow 4) Execution state activation/rollback requests
+- **`underwriting.execution.disable`** - (Workflow 5) Execution deactivation requests
+
+## System Overview
+
+**Inputs and Outputs:**
+
+- **Inputs**: Pub/Sub messages (`underwriting.updated`, `document.analyzed`, `underwriting.processor.execute`, `underwriting.processor.consolidation`, `underwriting.execution.activate`, `underwriting.execution.disable`).
+- **Outputs**: Executed processor results, updated factors stored via database module (which then emits factor update notifications).
+
+**Workflows:**
+
+The orchestrator handles five distinct workflows:
+
+1. **Workflow 1 (Automatic Execution)**: Triggered by `underwriting.updated` or `document.analyzed`
+    - Filters eligible processors → Executes processors → Consolidates results into factors
+2. **Workflow 2 (Manual Execution)**: Triggered by `underwriting.processor.execute`
+    - Manually trigger specific processor execution with optional rerun capability
+3. **Workflow 3 (Consolidation Only)**: Triggered by `underwriting.processor.consolidation`
+    - Re-consolidates factors without running new executions
+4. **Workflow 4 (Execution Activation)**: Triggered by `underwriting.execution.activate`
+    - Restores application/document state from previous execution and consolidates
+5. **Workflow 5 (Execution Deactivation)**: Triggered by `underwriting.execution.disable`
+    - Removes execution and recalculates factors without state changes
+
+**Key Processing Stages (Workflow 1):**
+
+- **Filtration**: Load purchased processors, evaluate triggers, build processor and execution lists
+- **Execution**: Run pending processor executions in parallel, save results
+- **Consolidation**: Aggregate execution results per processor, calculate final factors
+
+**Notes:**
+
+- All workflows use shared components (Filtration, Execution, Consolidation, Format Payload List, Generate Execution, Prepare Processor, Activate/Deactivate Executions).
+- Consolidation uses only active executions; superseded/failed executions are excluded.
+- Database module handles all factor persistence and emits notifications after updates.
+- Hash-based deduplication prevents unnecessary duplicate executions.
+
+## Responsibilities
+
+- **Subscription & Intake**
+    - Subscribe to Pub/Sub topics: `underwriting.updated`, `document.analyzed`, `underwriting.processor.execute`, `underwriting.processor.consolidation`, `underwriting.execution.activate`, `underwriting.execution.disable`
+    - `Ack`/`Nack` handling with retry/backoff for transient failures
+    - Route messages to appropriate workflows based on event type
+- **Processor Filtration**
+    - Load purchased processors for the underwriting (tenant scope)
+    - Filter processors by `enabled=true` and `auto=true` flags
+    - Evaluate processor triggers to determine which should run
+    - Build processor list and execution list for processing
+- **Execution Management**
+    - Generate unique execution IDs using payload hashing
+    - Detect and prevent duplicate executions
+    - Run processor executions in parallel for performance
+    - Track execution status (pending, running, completed, failed)
+    - Support manual execution requests and reruns
+- **Execution State Management**
+    - Activate executions and restore application/document states (Workflow 4)
+    - Deactivate executions and recalculate factors (Workflow 5)
+    - Maintain current execution list per processor
+    - Handle processor type-specific activation logic (`Application`, `Stipulation`, `Document`)
+- **Factor Consolidation**
+    - Aggregate execution results per processor
+    - Apply processor-specific consolidation logic
+    - Calculate derived and aggregated factors
+    - Update factors in database with batch operations
+    - Support consolidation-only requests (Workflow 3)
+- **Data Integrity**
+    - Use hash-based deduplication to prevent duplicate work
+    - Maintain execution history and audit trails
+    - Ensure idempotent operations across all workflows
+    - Coordinate with database module for factor persistence and notifications
+
+---
+
+# Workflow 1
+
+**Subscribes to:** `underwriting.updated`, `document.analyzed`
+
+### **Automatic Processor Execution Flow**
+
+This workflow automatically executes processors when underwriting data or documents are updated, orchestrating the complete flow from filtration through execution to consolidation.
+
+```mermaid
+graph TD
+    UC("underwriting.updated")-->START(["Start"])
+    UU("document.analyzed")-->START
+    START-->PARSE["Parse Message"]
+    PARSE-->PARA[/"data:<br>underwriting_id"/]
+    PARA-->FILT[["Filtration<br>(underwriting_id)"]]
+    FILT-->EXEC[["Execution<br>(execution_list)"]]
+    EXEC-->CONS[["Consolidation<br>(processor_list)"]]
+    CONS-->END(["End"])
+
+```
+
+### **Payload**
+
+```json
+{
+  "underwriting_id": "uw_67890"
+}
+
+```
+
+**Fields:**
+
+- `underwriting_id` (required): The underwriting case to process
+
+### **Steps**
+
+1. **Start**: Workflow triggered by `underwriting.updated` or `document.analyzed` event.
+2. **Parse Message**: Extract data from incoming event payload.
+3. **Extract Parameters**: Retrieve `underwriting_id` from message data.
+4. **Filtration**: Determine which processors should run and generate execution list.
+    - Fetch underwriting data and eligible processors.
+    - Apply trigger logic to each processor.
+    - Build `processor_list` and `execution_list`.
+5. **Execution**: Launch processor executions concurrently.
+    - Deduplicate and prepare execution records.
+    - Execute all pending processor runs in parallel.
+    - Record execution results.
+6. **Consolidation**: Aggregate results and calculate factors.
+    - For each processor, consolidate execution results.
+    - Calculate and save factor outputs.
+    - Emit batch notifications for factor updates.
+7. **End**: Acknowledge message and complete workflow.
+
+### **Notes**
+
+- **Event-Driven Trigger**: Automatically triggered by underwriting or document updates, not manually invoked.
+- **Automatic Processors Only**: Only processes processors where `enabled = true` and `auto = true`.
+- **Three-Phase Architecture**: Clear separation between filtration (what to run), execution (running), and consolidation (results).
+- **Parallel Execution**: All qualifying processor executions run concurrently for performance.
+- **Smart Filtration**: Uses trigger logic and payload hashing to avoid duplicate executions.
+- **Idempotent Design**: Can safely process the same event multiple times without creating duplicate work.
+- **Batch Consolidation**: Factors are updated in batch per processor to minimize event emissions.
+- **Complete Workflow**: Orchestrates the entire processor lifecycle from detection through factor generation.
+- **Error Isolation**: Failures in one processor don't prevent others from completing.
+- **Subsections Below**: See Filtration, Execution, and Consolidation sections for detailed implementation logic.
+
+---
+
+## Filtration (`BaseProcessor`)
+
+**Purpose**: Filters and selects processors that should run based on triggers and configuration, and generate the execution list also.
+
+```mermaid
+flowchart TB
+    START(["Start"])-->PARA[/"Parameters:<br>underwriting_id"/]
+    PARA-->GETUNDER[("Get underwriting data<br>(underwriting_id)")]
+    GETUNDER-->GETPRO[("Get processors<br>(underwriting_id)<br>(enabled=true)<br>(auto=true)")]
+    GETPRO-->EACHPRO["Check each processor"]
+    EACHPRO-->PREP[["Prepare Processor<br>(underwriting_processor_id)<br>(underwriting data)"]]
+    PREP-->ISNULL{"Is result<br>NULL?"}
+    ISNULL-->|No|ADDPROLIST["Add underwriting_processor_id to processor_list"]
+    ISNULL-->|Yes|ALLPRO{"All<br>processor<br>checked?"}
+    ADDPROLIST-->ADDEXELIST["Add result to execution_list"]
+    ADDEXELIST-->ALLPRO
+    ALLPRO-->|Yes|END(["Return<br>processor_list<br>execution_list"])
+    ALLPRO-->|No|PREP
+
+```
+
+### **Payload**
+
+```json
+{
+  "underwriting_id": "uw_67890"
+}
+
+```
+
+### **Steps**
+
+1. **Start**: Begin filtration process for the underwriting case.
+2. **Receive Parameters**: Accept `underwriting_id` as input parameter.
+3. **Get Underwriting Data**: Retrieve complete underwriting data for the given `underwriting_id`.
+4. **Get Processors**: Fetch all processors linked to this underwriting/tenant where:
+    - `enabled = true` (processor is active)
+    - `auto = true` (processor is configured for automatic runs)
+    - Processor has been purchased by the tenant/organization (tenant scope)
+5. **Check Each Processor**: Iterate through each eligible processor.
+6. **Prepare Processor**: Call Prepare Processor step (passing `underwriting_processor_id` and underwriting data).
+7. **Is Result NULL?**: Check the return value from Prepare Processor.
+    - **No**: Add `underwriting_processor_id` to `processor_list` and add result to `execution_list`.
+    - **Yes**: Skip to next processor (no triggers matched).
+8. **All Processors Checked?**:
+    - **No**: Return to step 5 to process the next processor.
+    - **Yes**: Proceed to return results.
+9. **Return**: Return both `processor_list` and `execution_list` for use in Execution phase.
+
+### **Notes**
+
+- **NULL Result Handling**: `NULL` from Prepare Processor means processor does not participate at all (no triggers matched).
+- **Empty Array Handling**: `[]` (empty array) means triggers matched but no new executions needed (processor still goes to consolidation).
+- **Non-NULL Inclusion**: Only processors with non-NULL results are included in final processor and execution lists.
+- **Automatic Processors Only**: This logic only applies to processors with `auto = true`.
+- **Tenant Scope**: Processors must be purchased/enabled by the tenant/organization to be eligible.
+- **Dual Output**: Returns both `processor_list` (for consolidation) and `execution_list` (for execution).
+- **Trigger-Based Selection**: Uses processor-specific trigger logic to determine participation.
+
+### **Summary Table**
+
+| Prepare Result | Processor in `processor_list`? | `execution_list` contents? | Goes to consolidation? |
+| --- | --- | --- | --- |
+| NULL | No | N/A | No |
+| [] | Yes | [] | Yes |
+| [execs…] | Yes | [execs…] | Yes |
+
+---
+
+## Prepare Processor (`BaseProcessor`)
+
+**Purpose**: Prepare Processor is responsible for determining whether a processor should participate in underwriting orchestration based on current application data and processor trigger logic. It normalizes the incoming data, evaluates processor triggers (using an ANY-match filter), and, if selected, generates a list of payloads that represent distinct work for the processor. The step identifies new executions that need to run (based on payload hashes), skips if no triggers match (returns `NULL`), and ensures only necessary processors and executions are included in the next orchestration phase.
+
+```mermaid
+flowchart TB
+    START(["Start"])-->PARA[/"Parameters:<br>underwriting_processor_id<br>data<br>duplicate?"/]
+    PARA-->FORMAT[["Format Payload List<br>(data)"]]
+    FORMAT-->EACPAY["For each payload"]
+    EACPAY-->GENEXE[["Generate Execution<br>(underwriting_processor_id)<br>(payload)<br>(duplicate?)"]]
+    GENEXE-->ADDEXELIST["Add to execution_list"]
+    ADDEXELIST-->ALLPAY{"All payload<br>checked?"}
+    ALLPAY-->|No|GENEXE
+    ALLPAY-->|Yes|GETPRO[("Get procesor current execution data by underwriting_processor_id")]
+    GETPRO-->GETADDEXE["Get new_exe_list which is in execution_list but not current execution"]
+    GETADDEXE-->GETDELEXE["Get del_exe_list which is in current execution but not execution_list"]
+    GETDELEXE-->IFSAME{"If both<br>new_exe_list<br>and del_exe_list<br>empty?"}
+    IFSAME-->|Yes|RETNULL(["Return NULL"])
+    IFSAME-->|No|UPDCUREXE[("Update current executions<br>(underwriting_processor_id)<br>(execution_list)")]
+    UPDCUREXE-->RETCUREXE(["Return new_exe_list"])
+
+```
+
+### **Payload**
+
+```json
+{
+  "underwriting_processor_id": "uw_67890",
+  "duplicate": false,
+  "data": [{"underwriting data"}]
+}
+
+```
+
+### **Steps**
+
+1. **Start**: Begin prepare processor logic.
+2. **Receive Parameters**: Accept `underwriting_processor_id`, `data` (underwriting data), and optional `duplicate` flag.
+3. **Format Payload List**: Call Format Payload List to transform incoming data.
+    - Implementation depends on processor type (Application, Stipulation, or Document).
+    - Generate normalized payload structures for each required execution.
+4. **For Each Payload**: Iterate through each generated payload.
+5. **Generate Execution**: Create execution record with unique hash.
+    - Hash based on payload + processor ID + duplicate flag (if present).
+    - Add execution to `execution_list`.
+6. **All Payloads Checked?**:
+    - **No**: Return to step 5 to process next payload.
+    - **Yes**: Proceed to comparison step.
+7. **Get Processor Current Execution Data**: Retrieve existing executions for `underwriting_processor_id`.
+8. **Get New Execution List**: Determine `new_exe_list` = executions in `execution_list` but not in current executions.
+9. **Get Deleted Execution List**: Determine `del_exe_list` = executions in current executions but not in `execution_list`.
+10. **If Both Lists Empty?**: Check if both `new_exe_list` and `del_exe_list` are empty.
+    - **Yes**: Return NULL (no triggers matched / no changes).
+    - **No**: Proceed to update.
+11. **Update Current Executions**: Update current execution data with new `execution_list`.
+12. **Return**: Return `new_exe_list` containing only truly new executions that need to run.
+
+### **Notes**
+
+- **NULL Return**: Indicates no triggers matched or no changes detected - processor skips participation entirely.
+- **Empty Array Return**: Triggers matched but all executions already exist - processor still goes to consolidation.
+- **Hash-Based Deduplication**: Uses payload hashing to detect identical executions and avoid duplicates.
+- **Differential Processing**: Tracks both new and removed executions to maintain accurate current execution state.
+- **Processor Type Aware**: Behavior varies based on processor type through Format Payload List implementation.
+- **Optional Duplicate Flag**: When `duplicate = true`, allows creating new execution with same hash (for manual reruns).
+- **Consolidation Participation**: Even with empty `new_exe_list`, processor participates in consolidation if triggers matched.
+
+---
+
+## Format Payload List (`Processor`)
+
+**Purpose**: The Format Payload List function is responsible for transforming the incoming data (such as `application_form` and `documents_list`) into a normalized list of payloads suitable for further processing. Its implementation varies depending on the type of processor (application, stipulation, or document), ensuring that each payload structure matches the requirements of the downstream execution pipeline. This step ensures all necessary fields are populated according to processor type, handles empty or invalid cases, and returns an array of structured payloads for execution generation.
+
+```mermaid
+flowchart
+  START(["Start"])-->PARA[/"Parameters:<br>data:{ application_form, document_list }"/]
+  PARA-->SWITCH["Type of processor"]
+  SWITCH-->|Application|GETAPP["Get payload structure"]
+  GETAPP-->FILLDATA["Fill each field value in payload from data"]
+  FILLDATA-->ISNULL{"Is all field value NULL?"}
+  ISNULL-->|No|RETAPP(["Return [payload]"])
+  ISNULL-->|Yes|RETEMPTY(["Return Empty Array"])
+  SWITCH-->|Stipulation|FILTERDOC[("Filter documents with stipulation type")]
+  SWITCH-->|Document|FILTERDOC
+  FILTERDOC-->ISEMPTY{"Is<br>documents<br>empty?"}
+  ISEMPTY-->|Yes|RETEMPTY
+  ISEMPTY-->|No|TYPE["Type of processor"]
+  TYPE-->|Stipulation|RETSTI(["Return [{revision_id:<br>[revision id,<br>revision id]}]"])
+    TYPE-->|Document|RETDOC(["Return <br>[{revision_id:revision id},<br>{revision_id:revision id}]"])
+
+```
+
+### Input Data Format
+
+The function receives data in the following format:
+
+```json
+{
+  "application_form": {
+    "merchant.name": "Abc merchant",
+    "merchant.industry": "1342",
+    "owners_list": [
+      {
+        "owner_id": "owner_001",
+        "first_name": "John",
+        "last_name": "Doe"
+      },
+      {
+        "owner_id": "owner_002",
+        "ssn": "123456789"
+      }
+    ]
+  },
+  "documents_list": [
+    {
+      "stipulation_type": "s_bank_statement",
+      "revision_id": "doc_rev_001",
+      "uri": "gs://bucket/path/to/doc_rev_001.pdf"
+    },
+    {
+      "stipulation_type": "s_bank_statement",
+      "revision_id": "doc_rev_002",
+      "uri": "gs://bucket/path/to/doc_rev_002.pdf"
+    },
+    {
+      "stipulation_type": "s_drivers_license",
+      "revision_id": "doc_rev_003",
+      "uri": "gs://bucket/path/to/doc_rev_003.png"
+    },
+    {
+      "stipulation_type": "s_drivers_license",
+      "revision_id": "doc_rev_004",
+      "uri": "gs://bucket/path/to/doc_rev_004.png"
+    }
+  ]
+}
+
+```
+
+### Steps
+
+1. **Start**: Begin payload formatting process.
+2. **Receive Parameters**: Accept `data` containing `application_form` and `document_list`.
+3. **Type of Processor**: Determine if processor is Application, Stipulation, or Document type.
+4. **Application Type Path**:
+    - Get payload structure template.
+    - Fill each field value in payload from data.
+    - Is all field value NULL? If No: Return `[payload]`. If Yes: Return empty array.
+5. **Stipulation/Document Type Path**:
+    - Filter documents with matching stipulation type.
+    - Is documents empty? If Yes: Return empty array. If No: Continue.
+    - Check processor type again:
+        - **Stipulation**: Return `[{revision_id: [revision id, revision id, ...]}]` (all revisions in one payload).
+        - **Document**: Return `[{revision_id: revision id}, {revision_id: revision id}, ...]` (one payload per revision).
+
+### Processor Type Examples
+
+**1. Application Processor**
+
+Payload structure template:
+
+```json
+{
+  "merchant.name": NULL,
+  "merchant.ein": NULL
+}
+
+```
+
+After formatting:
+
+```json
+[{
+  "merchant.name": "Abc merchant",
+  "merchant.ein": NULL
+}]
+
+```
+
+**2. Stipulation Processor**
+
+Payload structure template:
+
+```json
+{
+  "revision_id": []
+}
+
+```
+
+After formatting:
+
+```json
+[{
+  "revision_id": ["doc_rev_003", "doc_rev_004"]
+}]
+
+```
+
+**3. Document Processor**
+
+Payload structure template:
+
+```json
+    []
+
+```
+
+After formatting:
+
+```json
+[
+  {"revision_id": "doc_rev_001"},
+  {"revision_id": "doc_rev_002"}
+]
+
+```
+
+### Notes
+
+- **Shared Implementation**: This function is implemented in `BaseProcessor` and used by all specific processors.
+- **Three Implementation Types**: Application, Stipulation, and Document processors have distinct formatting logic based on processor type.
+- **Empty Array Handling**: Returns empty array if all field values are NULL (Application) or if no matching documents found (Stipulation/Document).
+- **Stipulation vs Document**: Stipulation groups all revisions in one payload; Document creates separate payload per revision.
+- **Normalized Structure**: Ensures all payloads follow consistent format for downstream execution generation.
+- **Processor-Specific Behavior**: Logic varies based on processor type configuration (Application, Stipulation, or Document).
+
+---
+
+## Generate Execution (`BaseProcessor`)
+
+**Purpose**: This predefined workflow will return an executions based on given underwriting processor id and payload. Another parameter duplicate is optional. It will based on the given payload generate a execution. If the execution with the same payload hash is already existed in the database, it will return the existing execution id unless the duplicate is TRUE. If duplicate is TRUE, it will create new execution with same hash and update the current link id and return the new one. If the payload hash is not in the database, it will create new execution and returned.
+
+```mermaid
+graph
+    START(["Start"])-->PARAMETERS[/"underwriting_processor_id,<br>payload,<br>duplicate?"/]
+    PARAMETERS-->GENHASH["Generate Hash from Payload"]
+    GENHASH-->ISINLIST[("Find execution with same hash under same underwriting_processor_id")]
+    ISINLIST-->|No|CREATE[("Create new execution")]
+    ISINLIST-->|Yes|IFDUP{"If duplicated?"}
+    IFDUP-->|Yes|DUPLICATE[("Duplicate execution with same hash")]
+    IFDUP-->|No|RETURN["Return execution_id"]
+    DUPLICATE-->RETURN
+    CREATE-->RETURN
+
+```
+
+### Steps
+
+1. **Start**: Begin execution generation process.
+2. **Receive Parameters**: Accept `underwriting_processor_id`, `payload`, and optional `duplicate` flag.
+3. **Generate Hash from Payload**: Compute a hash value from the payload for deduplication.
+4. **Find Execution**: Search for existing execution with the same hash under the same `underwriting_processor_id`.
+5. **Existing Execution Found?**:
+    - **No**: Create new execution record and return its ID.
+    - **Yes**: Check if `duplicate` flag is set.
+6. **If Duplicated?** (when existing execution found):
+    - **Yes**: Duplicate execution with same hash, create new execution record with link to original, return new execution ID.
+    - **No**: Return existing execution ID without creating new record.
+7. **Return**: Return execution ID (new, duplicated, or existing) for scheduling or execution phase.
+
+### Notes
+
+- **Hash-Based Deduplication**: Uses payload hash to detect identical executions and prevent unnecessary duplicate runs.
+- **Duplicate Flag**: When `duplicate = true`, allows creating new execution even if identical hash exists (for manual reruns).
+- **Link Tracking**: Duplicated executions maintain link to original execution for audit trail.
+- **Idempotent Without Duplicate Flag**: Calling with same payload returns same execution ID without creating duplicates.
+- **Processor Scoped**: Hash uniqueness is scoped to specific `underwriting_processor_id`.
+- **Return Values**: Always returns execution ID - either newly created, duplicated, or existing.
+
+---
+
+## Execution (`BaseProcessor`)
+
+**Purpose**: Manages execution scheduling with hash-based lookup and reactivation logic for existing executions.
+
+```mermaid
+flowchart TB
+    START(["Start"])-->PARA[/"Parameters:<br>execution_list"/]
+    PARA-->EACHEXE["For each execution"]
+    EACHEXE-->GETEXE[("Get execution data<br>execution_id")]
+    GETEXE-->IFSTATUS{"If status<br>is pending?"}
+    IFSTATUS-->|Yes|EXE["Create execution thread and run it"]
+    IFSTATUS-->|No|ALLEXE{"All<br>execution<br>checked?"}
+    EXE-->ADDTHREAD["Add thread to thread_list"]
+    ADDTHREAD-->ALLEXE
+    ALLEXE-->|No|GETEXE
+    ALLEXE-->|Yes|ALLEND["Wait till all threads in thread_list ended"]
+    ALLEND-->END(["END"])
+
+```
+
+### **Steps**
+
+1. **Start**: Begin execution phase.
+2. **Receive Parameters**: Accept `execution_list` from Filtration phase.
+3. **For Each Execution**: Iterate through each execution in the list.
+4. **Get Execution Data**: Retrieve execution details using the `execution_id`.
+5. **If Status is Pending?**: Check if execution status is pending.
+    - **Yes**: Create execution thread and run it, then add thread to `thread_list`.
+    - **No**: Skip to next execution check.
+6. **All Executions Checked?**:
+    - **No**: Return to step 4 to process next execution.
+    - **Yes**: Proceed to wait step.
+7. **Wait Till All Threads Ended**: Wait for all threads in `thread_list` to complete.
+8. **End**: Proceed to Consolidation phase once all executions have finished.
+
+### **Notes**
+
+- **Pending Status Only**: Only executions with `pending` status are executed; others (`completed`, `running`) are skipped.
+- **Parallel Execution**: All pending executions run concurrently in separate threads for performance.
+- **Thread Management**: Tracks all execution threads to ensure completion before proceeding.
+- **Non-Blocking**: Execution threads run independently without blocking each other.
+- **Status Handling**:
+    - `completed`: Already finished; not included in execution list.
+    - `running`: Already being processed elsewhere; not included.
+    - `pending`: Ready to process; included and executed here.
+- **Retry Mechanism**: Failed executions are represented as new pending executions in the list (prepared during Filtration).
+- **Synchronous Wait**: Main workflow waits for all execution threads to complete before consolidation.
+
+---
+
+## Consolidation (`BaseProcessor`)
+
+**Purpose**: Combines execution results per processor, resolves factor conflicts, and creates final factors.
+
+```mermaid
+flowchart TB
+    START(["Start"])-->PARA[/"Parameter:<br>processor_list"/]
+    PARA-->EACHPRO["For each processor"]
+    EACHPRO-->CON["Run consolidate"]
+    CON-->ALLPRO{"All<br>processor<br>checked?"}
+    ALLPRO-->|No|EACHPRO
+    ALLPRO-->|Yes|EMIT["Emit consolidation message"]
+    EMIT-->END(["END"])
+
+```
+
+### **Steps**
+
+1. **Start**: Begin consolidation phase.
+2. **Receive Parameter**: Accept `processor_list` from Filtration phase containing processors to consolidate.
+3. **For Each Processor**: Iterate through each processor in the list.
+4. **Run Consolidate**: Execute processor-specific consolidation logic:
+    - Load active executions related to the processor from database.
+    - Validate consolidation requirements are met (e.g., minimum data).
+    - Combine results from processor's executions as needed.
+    - Apply business rules and process-specific conflict resolution.
+    - Calculate derived/aggregated factors.
+5. **All Processors Checked?**:
+    - **No**: Return to step 3 to process next processor.
+    - **Yes**: Proceed to emit step.
+6. **Emit Consolidation Message**: For each processor:
+    - Update factors in database (using `emit: false`).
+    - Batch all factor updates per processor.
+    - Emit single notification per processor describing changed factors.
+7. **End**: Acknowledge Pub/Sub message to mark workflow complete.
+
+### **Notes**
+
+- **Per-Processor Consolidation**: Each processor has its own consolidation logic based on its specific requirements.
+- **Batch Updates**: All factor updates per processor occur in single transaction with `emit: false`.
+- **Single Notification**: One notification emitted per processor after all factors updated (not per factor).
+- **Active Executions Only**: Consolidation uses only currently active executions for the processor.
+- **Consolidation Patterns**:
+    - **Single Execution**: Use execution results directly as factors.
+    - **Multiple Executions**: Aggregate across executions (e.g., average revenue, total NSFs for bank statements).
+    - **Conflict Resolution**: Apply processor-specific rules (latest, highest, average, etc.).
+    - **Derived Factors**: Calculate new factors from existing ones (ratios, percentages, trends).
+- **Empty Execution Handling**: If no active executions, may clear factors or use defaults based on processor logic.
+- **Validation**: Ensures minimum data requirements before consolidation proceeds.
+
+---
+
+# Workflow 2
+
+**Subscribes to:** `underwriting.processor.execute`
+
+### **Manual Processor Execution Flow (Forced Execution)**
+
+Handles manual processor execution requests with three scenarios based on provided parameters.
+
+```mermaid
+graph TD
+    UPE("underwriting.processor.execute")-->START(["Start"])
+    START-->A["Parse message"]
+    A-->PARA[/"underwriting_processor_id<br>execution_id?<br>duplicated?"/]
+    PARA-->CHECK{"Has<br/>execution_id?"}
+    CHECK-->|Yes|GETEXEPAY[("Get execution payload")]
+    GETEXEPAY-->GENEXE[["Generate Execution<br>(underwriting_processor_id)<br>(payload)<br>(duplicate=TRUE)"]]
+    CHECK-->|No|GETEXE[("Get processor data<br>(underwriting_processor_id)")]
+    GETEXE-->GETUNDER[("Get underwriting data<br>(underwriting_id)")]
+    GETUNDER-->PREP[["Prepare Processor<br>(underwriting_processor_id)<br>(underwriting data)<br>(duplicated?)"]]
+    PREP-->ISNULL{"Is result<br>NULL?"}
+    ISNULL-->|Yes|END
+    ISNULL-->|No|ADDEXE["Add execution(s) into execution_list"]
+    GENEXE-->ADDEXE
+        ADDEXE-->EXE[["Execution<br>(execution_list)"]]
+        EXE-->CON[["Consolidation<br>([underwriting_processor_id])"]]
+    CON--> END(["End"])
+
+```
+
+### Payload
+
+```json
+{
+  "underwriting_processor_id": "uwp_123",
+  "execution_id": "exec_001",
+  "duplicate": false
+}
+```
+
+**Fields:**
+
+- `underwriting_processor_id` (required): The underwriting processor to execute
+- `execution_id` (optional): Specific execution to rerun with the same payload
+- `duplicate` (optional): Allow duplicate results for this execution; if set to `true`, the processor will accept and record a new result even if an identical result already exists
+
+### Steps
+
+1. **Start**: Workflow triggered by `underwriting.processor.execute` event.
+2. **Parse Message**: Extract data from incoming event payload.
+3. **Extract Parameters**: Retrieve `underwriting_processor_id`, optional `execution_id`, and optional `duplicate` flag.
+4. **Has execution_id?**: Check if specific execution ID is provided.
+    - **Yes**:
+        - Get execution payload from the specified execution.
+        - Generate Execution with `duplicate=TRUE` to create new execution with same payload.
+        - Add execution to `execution_list`.
+    - **No**:
+        - Get processor data using `underwriting_processor_id`.
+        - Get underwriting data using `underwriting_id` from processor.
+        - Prepare Processor with underwriting data and `duplicate` flag.
+        - Is result NULL? If Yes: End. If No: Add execution(s) to `execution_list`.
+5. **Execution**: Run all executions in `execution_list`.
+6. **Consolidation**: Consolidate results for the `underwriting_processor_id`.
+7. **End**: Complete workflow.
+
+### Notes
+
+- **Manual Trigger**: This workflow is manually triggered, unlike Workflow 1 which is automatic.
+- **Three Scenarios**:
+    - Rerun specific execution (when `execution_id` provided).
+    - Run processor with new data (when only `underwriting_processor_id` provided).
+    - Force duplicate execution (when `duplicate=true`).
+- **Duplicate Flag**: When `duplicate=true`, creates new execution even if identical payload exists.
+- **NULL Handling**: If Prepare Processor returns NULL, workflow ends without execution.
+- **Forced Execution**: Bypasses automatic trigger logic, always attempts to run the specified processor.
+- **Single Processor**: Only processes one processor per request (specified by `underwriting_processor_id`).
+
+---
+
+# Workflow 3
+
+**Subscribes to:** `underwriting.processor.consolidation`
+
+### **Processor Consolidation Only**
+
+This workflow triggers consolidation without creating or running any processor executions. Used when execution selection changes (activation/deactivation) require factor recalculation.
+
+```mermaid
+graph TD
+    UPU(["underwriting.processor.consolidation"])-->START(["Start"])
+    START-->PARSE["Parse Message"]
+    PARSE-->PARA[/"Data:<br>underwriting_processor_id"/]
+    PARA-->CONS[["Consolication<br>([underwriting_processor_id])"]]
+    CONS-->END(["End"])
+
+```
+
+### Payload
+
+```json
+{
+  "underwriting_processor_id": "uwp_123"
+}
+```
+
+**Fields:**
+
+- `underwriting_processor_id` (required): The underwriting processor to consolidate
+
+### Steps
+
+1. **Start**: Workflow triggered by `underwriting.processor.consolidation` event.
+2. **Parse Message**: Extract data from incoming event payload.
+3. **Extract Parameters**: Retrieve `underwriting_processor_id` from message data.
+4. **Consolidation**: Call consolidation process for the specified `underwriting_processor_id`.
+    - Load current active executions for the processor from database.
+    - If active executions exist: Run consolidation using those executions.
+    - If no active executions: Clear all factors for this processor.
+    - Update factors in database based on consolidation results.
+5. **End**: Database module emits factor update notifications and workflow completes.
+
+### Notes
+
+- **No Execution Creation**: Never creates or runs processor executions.
+- **Consolidation Only**: Re-consolidates using only current active executions.
+- **Idempotent**: Can be run multiple times safely with same results.
+- **Immediate Effect**: Factor changes take effect immediately based on current execution selection.
+- **Empty State Handling**: If no active executions, clears processor's factors completely.
+- **Database Coordination**: Database module handles execution list updates before triggering this workflow.
+- **Trigger Scenarios**:
+    - An execution is activated (after database module updates current execution list).
+    - An execution is disabled (after database module removes from current execution list).
+    - Manual consolidation is requested without changing executions.
+
+---
+
+# Workflow 4
+
+**Subscribes to:** `underwriting.execution.activate`
+
+### Execution State Activation (Rollback)
+
+This workflow restores application form data and/or document states to match a previously executed state. The database module has already activated the execution before this workflow receives the message.
+
+```mermaid
+graph TD
+    UEA[/"underwriting.execution.activate"/]-->START(["Start"])
+    START-->PARSE["Parse Message"]
+    PARSE-->PARA[/"Data:<br>execution_id"/]
+    PARA-->LOAD[("Find execution data by execution_id")]
+    LOAD-->ACTIVATE[["Activate executions<br>(underwriting_processor_id)<br>([execution_id])"]]
+        ACTIVATE-->GETPAY["Get payload of execution"]
+        GETPAY-->SWITCH["Check type of processor"]
+    SWITCH-->|Application|UPDATEAPP[("Update underwriting<br>(underwriting_id)<br>({application_form:execution.payload})")]
+    UPDATEAPP-->CONS[["Consolication<br>([underwriting_processor_id])"]]
+    CONS-->END(["End"])
+    SWITCH-->|Stipulation|DISABLE[("Set all documents disabled<br>(underwriting_id)<br>(stipulation)")]
+    DISABLE-->EACHREV["For each revision_id in payload"]
+    EACHREV-->GETREV[("Get revision data by revision_id")]
+    GETREV-->UPDATEREV[("Update document current revision and enable=true<br>(document_id)<br>(revision_id)")]
+    UPDATEREV-->ALLREV{"All<br>revision<br>checked?"}
+    ALLREV-->|No|GETREV
+    ALLREV-->|Yes|CONS
+    SWITCH-->|Document|EACHREV
+
+```
+
+### Payload
+
+```json
+{
+  "execution_id": "exec_456"
+}
+
+```
+
+**Fields:**
+
+- `execution_id` (required): The execution to activate and restore state from
+
+### Steps
+
+1. **Start**: Workflow triggered by `underwriting.execution.activate` event.
+2. **Parse Message**: Extract data from incoming event payload.
+3. **Extract Parameters**: Retrieve `execution_id` from message data.
+4. **Find Execution Data**: Query database for execution record using `execution_id` to obtain `underwriting_processor_id` and execution details.
+5. **Activate Executions**: Call activation process with `underwriting_processor_id` and execution ID list.
+    - **Get Payload**: Retrieve execution payload (application form values or document revision IDs).
+    - **Check Processor Type**: Determine if processor is Application, Stipulation, or Document type.
+    - **Application Type**:
+        - Update underwriting application form with payload values (`application_form: execution.payload`).
+    - **Stipulation Type**:
+        - Set all documents disabled for the `underwriting_id` and stipulation.
+        - For each `revision_id` in payload: Get revision data, then update document to set as current and enable.
+    - **Document Type**:
+        - For each `revision_id` in payload: Get revision data, then update document to set as current and enable.
+6. **Consolidation**: Trigger consolidation for affected processor (`underwriting_processor_id`).
+7. **End**: Complete workflow after consolidation and state restoration are finalized.
+
+### Notes
+
+- **Execution Activated First**: Database module marks execution as active in the current execution list before this workflow is triggered.
+- **State Restoration**: This workflow restores application form data and/or document states to match the activated execution's payload.
+- **Data Modification**: Unlike Workflow 5, this workflow DOES modify application form data and/or document states based on processor type.
+- **Type-Specific Behavior**: Restoration logic varies significantly based on processor type (Application, Stipulation, Document).
+- **Single Transaction**: All state updates occur within a single database transaction with `emit: false` for atomicity.
+- **Loop Prevention**: Uses `emit: false` during restoration, then emits single message after commit to prevent infinite loops.
+- **Hash-Based Recognition**: Workflow 1 receives update event but recognizes existing execution by hash, skipping duplicate execution creation.
+- **Consolidation Trigger**: After state restoration, consolidation recalculates factors based on the restored data.
+- **Rollback Capability**: This workflow enables users to "roll back" to previous execution states by reactivating them.
+- **Document Handling**: For document-based processors, only specified revisions are enabled; others remain in their current state.
+
+### Processor Restoration Details
+
+The restoration process varies based on processor type. Below are the detailed behaviors for each type:
+
+**Application-Based Processor:**
+
+- Extract application form values from execution payload.
+- Update underwriting application form in database with `emit: false`.
+- All fields from payload (including explicit `"field": null`) are restored to fully match previous state.
+- Single update message emitted after transaction commit.
+- Workflow 1 receives message, identifies current execution by hash, runs consolidation.
+
+**Stipulation-Based Processor:**
+
+- Disable all related documents for the `underwriting_id` and stipulation.
+- For each `revision_id` in payload: retrieve revision data, update document to set as current and enable.
+- All updates occur in single transaction with `emit: false`.
+- Single message emitted after commit triggers Workflow 1 consolidation.
+
+**Document-Based Processor:**
+
+- For each `revision_id` in payload: retrieve revision data, update document to set as current and enable.
+- Other documents in stipulation remain unchanged.
+- Single transaction with `emit: false`, one message emitted after commit.
+- Consolidation triggered via Workflow 1.
+
+**Loop Prevention:**
+
+- Database marks execution active before processor restoration begins.
+- Single consolidated message emitted after all updates committed.
+- Workflow 1 recognizes existing execution by hash, skips duplicate creation, runs consolidation only.
+
+---
+
+## Activate Executions (`BaseProcessor`)
+
+**Purpose**: Activate Executions handles the process of enabling or restoring execution states for underwriting processors. This involves interpreting a list of executions and updating the processor's execution list based on the processor type (`Application`, `Stipulation`, or `Document`). The logic ensures that the correct executions are marked as active, with checks and updates performed transactionally to maintain database integrity and prevent redundant updates or loops. Restoration actions may clear previous executions and enable new ones, triggering downstream consolidation activities via a single emitted event after all changes are committed.
+
+```mermaid
+flowchart TB
+  START(["Start"])-->PARA[/"underwriting_processor_id<br>execution_list"/]
+  PARA-->GETPRO[("Get processor by underwriting_processor_id")]
+  GETPRO-->CHKEXE["Check each execution"]
+  CHKEXE-->SWITCH["Switch by processor type"]
+  SWITCH-->|Application|CLEARCUR[("Clear current execution list")]
+  CLEARCUR-->INSEXE[("Insert current execution")]
+  SWITCH-->|Stipulation|CLEARCUR
+  SWITCH-->|Document|GETEXE[("Get execution by id")]
+  GETEXE-->FINDEXE[("Find current execution with same document_id")]
+  FINDEXE-->IFEXIST{"If exists?"}
+  IFEXIST-->|Yes|DELEXE[("Delete current execution")]
+  IFEXIST-->|No|INSEXE
+  DELEXE-->INSEXE
+  INSEXE-->ALLEXE{"All<br>Execution<br>checked?"}
+  ALLEXE-->|Yes|END(["End"])
+  ALLEXE-->|No|SWITCH
+
+```
+
+### Steps
+
+1. **Start**: Begin activation process for specified executions.
+2. **Receive Parameters**: Accept `underwriting_processor_id` and `execution_list` (list of execution IDs to activate).
+3. **Get Processor**: Retrieve processor data using `underwriting_processor_id`.
+4. **Check Each Execution**: Iterate through each execution in the `execution_list`.
+5. **Switch by Processor Type**: Determine processor type and apply type-specific logic:
+    - **Application Type**:
+        - Clear current execution list completely.
+        - Insert the new execution as current.
+    - **Stipulation Type**:
+        - Clear current execution list completely.
+        - Insert the new execution as current.
+    - **Document Type**:
+        - Get execution by ID.
+        - Find any current execution with the same `document_id`.
+        - If exists: Delete the existing current execution.
+        - Insert the new execution as current.
+6. **All Executions Checked?**:
+    - **No**: Return to step 5 to process the next execution.
+    - **Yes**: Proceed to end.
+7. **End**: Complete activation process after all executions have been updated in current list.
+
+### Notes
+
+- **Type-Based Strategy**: Application and Stipulation types fully replace execution lists; Document type replaces per-document.
+- **Clear and Insert Pattern**: For Application/Stipulation processors, old executions are completely cleared before inserting new ones.
+- **Document Replacement**: For Document processors, only executions matching the same `document_id` are replaced.
+- **Transactional Updates**: All execution list modifications occur within a single database transaction.
+- **Multiple Executions**: Can handle multiple executions in a single call (e.g., activating multiple bank statements).
+- **Idempotent Operation**: Activating an already-active execution has no additional effect.
+- **Called by Workflow**: Always invoked as part of Workflow 4, never called directly or independently.
+- **Prerequisites**: Database module must have already marked executions as active before this function is called.
+- **Post-Processing**: State restoration (application form/documents) must occur after this function, followed by consolidation.
+
+---
+
+# Workflow 5
+
+**Subscribes to:** `underwriting.execution.disable`
+
+### Execution Deactivation
+
+```mermaid
+graph TD
+    UED("underwriting.execution.disable")-->START(["Start"])
+    START-->PARSE["Parse Message"]
+    PARSE-->PARA[/"Data:<br>execution_id"/]
+    PARA-->GETEXE[("Get execution data<br>(execution_id)")]
+    GETEXE-->DEACTIVATE[["Deactivate Executions<br>(underwriting_processor_id)<br>([execution_id])"]]
+    DEACTIVATE-->CONS[["Consolidation<br>([underwriting_processor_id])"]]
+    CONS-->END(["End"])
+
+```
+
+This workflow handles execution deactivation by removing factors without affecting application form or document data. The database module has already removed the execution from the current execution list before this workflow receives the message.
+
+### Payload
+
+```json
+{
+  "execution_id": "exec_456"
+}
+
+```
+
+**Fields:**
+
+- `execution_id` (required): The execution to disable/deactivate
+
+### Steps
+
+1. **Start**: Workflow triggered by `underwriting.execution.disable` event.
+2. **Parse Message**: Extract data from incoming event payload.
+3. **Extract Parameters**: Retrieve `execution_id` from message data.
+4. **Get Execution Data**: Query database for execution record using `execution_id` to obtain `underwriting_processor_id` and execution details.
+5. **Deactivate Executions**: Call deactivation process with `underwriting_processor_id` and `execution_id` list.
+    - Remove specified execution(s) from processor's current execution list in database.
+6. **Consolidation**: Trigger consolidation for affected processor (`underwriting_processor_id`).
+    - **If active executions remain**: Recalculate factors using remaining active executions.
+    - **If no active executions remain**: Clear all factors for this processor.
+7. **End**: Complete workflow after consolidation and factor updates are finalized.
+
+### Notes
+
+- **Execution List Updated First**: Database module removes execution from current execution list before this workflow is triggered.
+- **Factor Management Only**: This workflow only handles factor cleanup and recalculation - does NOT manage execution records or states.
+- **No Data Modification**: Application form data and documents remain completely unchanged - only factors are affected.
+- **Consolidation-Based**: Recalculates factors using only the remaining active executions after deactivation.
+- **Empty State Handling**: If no active executions remain after deactivation, all factors for the processor are cleared completely.
+- **Idempotent Operation**: Can be safely executed multiple times with the same `execution_id` without side effects.
+- **Independent from Activation**: Deactivation (Workflow 5) and activation (Workflow 4) are separate, independent operations.
+- **Document-Based Processors**: For processors that handle individual documents (e.g., bank statements), only the specific execution is removed from the current list.
+- **No Cascading Events**: Only updates factors in database - does NOT trigger Workflow 1 or create new events.
+- **Processor Isolation**: Only affects factors for the specific processor - other processors remain unchanged.
+
+---
+
+## Deactivate Executions (`BaseProcessor`)
+
+**Purpose**: Remove specified executions from the processor's current execution list in the database.
+
+```mermaid
+flowchart TB
+  START(["Start"])-->PARA[/"underwriting_processor_id<br>execution_list"/]
+  PARA-->CHKEXE["Check each execution"]
+  CHKEXE-->DELEXE[("Delete execution from current")]
+  DELEXE-->ALLEXE{"All<br>Execution<br>checked?"}
+  ALLEXE-->|Yes|END(["End"])
+  ALLEXE-->|No|CHKEXE
+
+```
+
+### Steps
+
+1. **Start**: Begin deactivation process for specified executions.
+2. **Receive Parameters**: Accept `underwriting_processor_id` and `execution_list` (list of execution IDs to deactivate).
+3. **Check Each Execution**: Iterate through each execution in the `execution_list`.
+4. **Delete Execution from Current**: Remove the execution from the processor's current execution list in the database.
+5. **All Executions Checked?**:
+    - **No**: Return to step 3 to process the next execution.
+    - **Yes**: Proceed to end.
+6. **End**: Complete deactivation process after all executions have been removed from current list.
+
+### Notes
+
+- **Simple Deletion**: This function only removes entries from the current execution list - no complex logic or validation.
+- **Batch Processing**: Can handle multiple executions in a single call via the `execution_list` parameter.
+- **Database Transaction**: All deletions occur within a single database transaction for atomicity.
+- **No Validation**: Does not verify if executions exist before attempting deletion - database handles this gracefully.
+- **Idempotent by Design**: Attempting to delete an already-removed execution has no effect or error.
+- **Called by Workflow**: Always invoked as part of Workflow 5, never called directly or independently.
+- **Prerequisite**: Database module must have already removed executions before this function is called.
+- **Post-Processing**: Consolidation must be called after this function to update factors accordingly.
+
+### Data Handling
+
+**What Gets Modified:**
+
+- **Factors**: Removed or recalculated without this execution
+- **Current Execution List**: Updated to exclude the deactivated execution(s)
+
+**What Stays Unchanged:**
+
+- **Application Form Data**: NOT restored or modified
+- **Documents**: NOT deleted or modified
+- **Document Revisions**: NOT changed
+- **Execution Record**: Remains in database with historical data, just no longer marked as current
+
+### Example Scenarios
+
+**Scenario 1: Driver's License with One Execution**
+
+- **Current State**: 1 active execution with 4 images
+- **Action**: User disables this execution
+- **Result**: No active executions remain, all driver's license factors are cleared
+
+**Scenario 2: Bank Statement with Three Executions**
+
+- **Current State**: 3 active executions (January, February, March statements)
+- **Action**: User disables February execution
+- **Result**: 2 active executions remain (January, March), factors recalculated using only those two
+
+**Scenario 3: Multiple Processors**
+
+- **Scope**: Only the specific processor's factors are affected
+- **Isolation**: Other processors' executions and factors remain completely unchanged

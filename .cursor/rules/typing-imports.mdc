@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+
+### Always use built-in typing instead of imported typing.
+
+For example, but not limited to:
+- instead of using `List` from `typing`, use `list` directly
+- instead of using `Dict` from `typing`, use `dict` directly
+- instead of using `Tuple` from `typing`, use `tuple` directly
+- instead of using `Set` from `typing`, use `set` directly
+
+The list goes on.

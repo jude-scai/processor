@@ -1,0 +1,1004 @@
+---
+alwaysApply: true
+---
+
+# What is the Processor Module?
+
+The Processor Module is a **centralized orchestration engine** that coordinates the execution of individual processors based on incoming events and business logic. It operates as a **Pub/Sub subscriber** that receives events from the Orchestrator and manages the complete processor lifecycle.
+
+## Purpose
+
+The Processor Module solves the challenge of **managing complex, multi-step data extraction** from various sources (documents, external APIs, application data) while ensuring **efficiency, reliability, and auditability**.
+
+It enables the AURA underwriting system to:
+
+- **Automatically process** underwriting data as it becomes available
+- **Avoid redundant work** through intelligent re-processing logic
+- **Extract structured factors** from unstructured documents and external services
+- **Maintain complete audit trails** for compliance and debugging
+- **Handle partial failures gracefully** without blocking the entire underwriting
+- **Support rollback and what-if analysis** through execution versioning
+
+## Role in AURA System
+
+The Processor Module sits between the **Data Collection layer** and the **Decision Engine layer** in the AURA underwriting platform:
+
+```
+Data Collection
+    │
+    ├─> Documents uploaded
+    ├─> Forms submitted
+    └─> Events published
+            ↓
+    ┌───────────────────────┐
+    │  Processor Module     │  ◄── You are here
+    └───────────────────────┘
+            │
+            ├─> Factors extracted
+            ├─> Data enriched
+            └─> Events published
+                    ↓
+            Decision Engine
+                    │
+                    └─> AI suggestions generated
+
+```
+
+**Upstream Dependencies**: Receives underwriting data and documents from Data Collection module
+
+**Downstream Consumers**: Provides structured factors to Decision Engine for AI-powered underwriting decisions
+
+**Cross-Cutting**: Integrates with Data Infrastructure for storage, Business Rules for validation, and Workflow Orchestration for event coordination
+
+# Architecture Overview
+
+```
+        ┌───────────────────────────────────────────────────────────────────────┐
+        │                             API LAYER                                 │
+        │                                                                       │
+        │  ┌─────────────────────────────────────────────────────────────────┐  │
+        │  │                      REST API ENDPOINTS                         │  │
+        │  ├─────────────────────────────────────────────────────────────────┤  │
+        │  │  System Processor Management                                    │  │
+        │  │  • GET    /api/v1/processors                                    │  │
+        │  │                                                                 │  │
+        │  │  Tenant Processor Management                                    │  │
+        │  │  • GET   /api/v1/tenant-processors                              │  │
+        │  │  • GET   /api/v1/tenant-processors/{id}                         │  │
+        │  │  • POST  /api/v1/tenant-processors                              │  │
+        │  │  • PUT   /api/v1/tenant-processors/{id}                         │  │
+        │  │  • GET   /api/v1/tenant-processors/{id}/executions              │  │
+        │  │                                                                 │  │
+        │  │  Underwriting Processor Management                              │  │
+        │  │  • GET   /api/v1/underwritings/{id}/processors                  │  │
+        │  │  • POST  /api/v1/underwritings/{id}/processors                  │  │
+        │  │  • PUT   /api/v1/underwritings/{id}/processors/{id}             │  │
+        │  │  • GET   /api/v1/underwritings/{id}/processors/{id}/executions  │  │
+        │  │  • GET   /api/v1/underwritings/{id}/processors/{id}/            │  │
+        │  │                        executions/{id}                          │  │
+        │  │  • POST  /api/v1/underwritings/{id}/processors/{id}/execute     │  │
+        │  │  • POST  /api/v1/underwritings/{id}/processors/{id}/consolidate │  │
+        │  │  • POST  /api/v1/underwritings/{id}/processors/{id}/            │  │
+        │  │                        executions/{id}/activate                 │  │
+        │  │  • POST  /api/v1/underwritings/{id}/processors/{id}/            │  │
+        │  │                        executions/{id}/disable                  │  │
+        │  └─────────────────────────────────────────────────────────────────┘  │
+        │                                                                       │
+        │  ┌─────────────────────────────────────────────────────────────────┐  │
+        │  │                     EVENT RECEPTION LAYER                       │  │
+        │  ├─────────────────────────────────────────────────────────────────┤  │
+        │  │  • underwriting.created                                         │  │
+        │  │  • underwriting.updated                                         │  │
+        │  │  • underwriting.processor.execute                               │  │
+        │  │  • underwriting.processor.consolidate                           │  │
+        │  │  • underwriting.execution.activate                              │  │
+        │  │  • underwriting.execution.disable                               │  │
+        │  └─────────────────────────────────────────────────────────────────┘  │
+        └───────────────────────────────────────────────────────────────────────┘
+                                           ↓
+        ┌───────────────────────────────────────────────────────────────────────┐
+        │                       WORKFLOW ORCHESTRATION                          │
+        │                                                                       │
+        │  ┌─────────────────────────────────────────────────────────────────┐  │
+        │  │  Workflow 1: Automatic Execution Handler                        │  │
+        │  │  (underwriting.created/updated)                                 │  │
+        │  │                                                                 │  │
+        │  │  Filtration → Execution → Consolidation                         │  │
+        │  │                                                                 │  │
+        │  │  • Normalize payloads (flatten forms, organize documents)       │  │
+        │  │  • Filter by triggers (ANY-match logic)                         │  │
+        │  │  • Smart re-processing with hash-based logic                    │  │
+        │  │  • Database module handles factor notifications                 │  │
+        │  └─────────────────────────────────────────────────────────────────┘  │
+        │                                                                       │
+        │  ┌─────────────────────────────────────────────────────────────────┐  │
+        │  │  Workflow 2: Manual Execution Handler                           │  │
+        │  │  (underwriting.processor.execute)                               │  │
+        │  │                                                                 │  │
+        │  │  Scenario Selection → Payload Generation → Execution            │  │
+        │  │                                                   → Consolidate │  │
+        │  │                                                                 │  │
+        │  │  • Scenario 1: Rerun specific execution (with execution_id)     │  │
+        │  │  • Scenario 2: Rerun entire processor (no parameters)           │  │
+        │  │  • Scenario 3: Selective data (with application_form or docs)   │  │
+        │  │  • Reuses Workflow 1 sections                                   │  │
+        │  └─────────────────────────────────────────────────────────────────┘  │
+        │                                                                       │
+        │  ┌─────────────────────────────────────────────────────────────────┐  │
+        │  │  Workflow 3: Processor Consolidation Handler                    │  │
+        │  │  (underwriting.processor.consolidate)                           │  │
+        │  │                                                                 │  │
+        │  │  Load Active Executions → Consolidate → Update Factors          │  │
+        │  │                                                                 │  │
+        │  │  • Consolidation only (no execution creation)                   │  │
+        │  │  • Triggered after activation/deactivation                      │  │
+        │  │  • Re-consolidate from current execution list                   │  │
+        │  └─────────────────────────────────────────────────────────────────┘  │
+        │                                                                       │
+        │  ┌─────────────────────────────────────────────────────────────────┐  │
+        │  │  Workflow 4: Execution Activation Handler                       │  │
+        │  │  (underwriting.execution.activate)                              │  │
+        │  │                                                                 │  │
+        │  │  Load Execution → Restore Data → Trigger Workflow 1             │  │
+        │  │                                                                 │  │
+        │  │  • Database activates execution first                           │  │
+        │  │  • Restore application form or documents                        │  │
+        │  │  • Loop prevention with emit: false flag                        │  │
+        │  │  • Consolidation via natural Workflow 1 trigger                 │  │
+        │  └─────────────────────────────────────────────────────────────────┘  │
+        │                                                                       │
+        │  ┌─────────────────────────────────────────────────────────────────┐  │
+        │  │  Workflow 5: Execution Deactivation Handler                     │  │
+        │  │  (underwriting.execution.disable)                               │  │
+        │  │                                                                 │  │
+        │  │  Load Execution → Consolidate → Update Factors                  │  │
+        │  │                                                                 │  │
+        │  │  • Database removes from current execution list first           │  │
+        │  │  • Factor cleanup only (no data restoration)                    │  │
+        │  │  • No loop risk                                                 │  │
+        │  └─────────────────────────────────────────────────────────────────┘  │
+        └───────────────────────────────────────────────────────────────────────┘
+                                           ↓
+        ┌───────────────────────────────────────────────────────────────────────┐
+        │                          EXECUTION ENGINE                             │
+        │                                                                       │
+        │   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐     │
+        │   │    Bank     │ │   Credit    │ │  Identity   │ │  External   │     │
+        │   │  Statement  │ │   Bureau    │ │Verification │ │   Reports   │     │
+        │   │  Processor  │ │ Processor(s)│ │  Processor  │ │ Processor(s)│     │
+        │   └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘     │
+        │                                                                       │
+        │   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐     │
+        │   │  Business   │ │   Drivers   │ │    Other    │ │   Custom    │     │
+        │   │Verification │ │   License   │ │ Processors  │ │ Processors  │     │
+        │   │  Processor  │ │  Processor  │ │             │ │             │     │
+        │   └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘     │
+        └───────────────────────────────────────────────────────────────────────┘
+                                           ↓
+        ┌───────────────────────────────────────────────────────────────────────┐
+        │                            DATA LAYER                                 │
+        │                                                                       │
+        │   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐     │
+        │   │ Processing  │ │   Factors   │ │  Purchased  │ │  Execution  │     │
+        │   │ Executions  │ │   Storage   │ │  Processors │ │   History   │     │
+        │   │    Table    │ │    Table    │ │    Table    │ │    Table    │     │
+        │   └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘     │
+        └───────────────────────────────────────────────────────────────────────┘
+
+```
+
+## Layers Overview
+
+### API Layer
+
+The entry point for all interactions with the Processor Module. Provides REST API endpoints for managing processors, executions, and subscriptions, as well as Pub/Sub event listeners for automatic processing triggers. All REST API calls are converted to Pub/Sub events for unified event-driven processing.
+
+**API Categories:**
+
+- **System Processor Management**: List available processors in the catalog
+- **Tenant Processor Management**: Manage purchased processor subscriptions
+- **Underwriting Processor Management**: Configure processors for specific underwritings
+- **Processor Execution Management**: Execute processors and manage execution state
+
+**Key Operations:**
+
+- **List**: View available or configured processors
+- **Create**: Purchase processors or add to underwritings
+- **Update**: Modify processor configurations
+- **Execute**: Trigger processor runs manually
+- **Activate**: Rollback to previous execution states
+
+### Workflow Orchestration
+
+Routes incoming events to specialized workflow handlers based on event type. Each workflow implements specific business logic for its operation and manages the complete lifecycle from event reception to factor persistence. Provides intelligent execution planning, hash-based deduplication, and atomic factor updates.
+
+**Workflow Types:**
+
+- **Workflow 1 - Automatic Execution**: Processes underwriting.created and underwriting.updated events with smart re-processing
+- **Workflow 2 - Manual Execution**: Handles forced processor execution via underwriting.processor.execute events with 3 scenarios
+- **Workflow 3 - Processor Consolidation**: Manages re-consolidation without execution via underwriting.processor.consolidate events
+- **Workflow 4 - Execution Activation**: Orchestrates rollback/activation via underwriting.execution.activate events
+- **Workflow 5 - Execution Deactivation**: Handles factor cleanup via underwriting.execution.disable events
+
+**Key Responsibilities:**
+
+- **Event Routing**: Direct events to appropriate workflow handlers
+- **Processor Selection**: Filter processors by triggers and execution eligibility
+- **Execution Planning**: Determine execution strategy and identify affected processors
+- **Data Restoration**: Restore application form and document states for rollback scenarios
+- **Factor Consolidation**: Merge processor outputs using processor-specific consolidation logic
+
+### Execution Engine
+
+Contains the library of individual processor implementations. Each processor extracts specific data from documents or application properties through a standardized 3-phase pipeline (pre-extraction, extraction, post-extraction) with atomic success/failure semantics ensuring complete transactional integrity.
+
+**Processor Categories:**
+
+- **Bank Statement Processors**: Revenue calculation, NSF detection, cash flow analysis
+- **Credit Bureau Processors**:
+    - Experian Businesses Processor
+    - Experian Business Owners Processor
+    - Equifax Principal Report Processor
+    - Equifax Business Credit Reports Processor
+- **Identity Verification Processors**: Driver’s license validation, business registration verification
+- **External Report Processors**: Thomson Reuters CLEAR, Data Merch default reporting
+- **Other Processors**
+
+**Execution Characteristics:**
+
+- **Atomic Semantics**: All-or-nothing execution model where any input failure terminates entire execution
+- **3-Phase Pipeline**: Pre-extraction (validation), extraction (data processing), post-extraction (consolidation)
+- **Complete Validation**: Full input validation at each phase before proceeding
+- **Event Lifecycle**: Automatic emission of execution lifecycle events to Pub/Sub for system coordination
+- **Cost Tracking**: Cumulative cost monitoring throughout execution for billing and analysis
+
+### Data Layer
+
+Persistent storage for all processing-related data. Stores execution records with their outputs, consolidated factors with lineage tracking, processor purchase/subscription configurations, and complete execution history for audit trails and rollback capabilities.
+
+**Core Tables:**
+
+- **Processing Executions**: Execution records with input hashes, outputs, status, and supersession links
+- **Factors Storage**: Consolidated factor values with processor lineage tracking
+- **Purchased Processors**: Tenant processor subscriptions with configuration (including `minimum_document`)
+- **Execution History**: Complete audit trail for compliance and rollback operations
+
+**Data Management Features:**
+
+- **Lineage Tracking**: Complete provenance from raw inputs to consolidated factors
+- **Version Control**: Supersession relationships enable rollback and what-if analysis
+- **Atomic Updates**: Transactional consistency across executions and factors
+- **Audit Trails**: Immutable history of all execution state changes
+- **Query Optimization**: Indexed access patterns for high-performance retrieval
+
+# Key Architectural Principles
+
+## 1. Event-Driven Design
+
+- Pub/Sub Integration: Subscribes to Orchestrator events via Google Cloud Pub/Sub
+- Asynchronous Processing: Non-blocking event handling for scalability
+- Event Correlation: Tracks event lineage for debugging and audit trails
+
+## 2. Modular Workflow Architecture
+
+- Independent Workflows: Each workflow handles specific event types
+- Workflow Isolation: Failures in one workflow don’t impact others
+- State Management: Maintains workflow state for resumability
+
+## 3. Execution Management
+
+- Hash-Based Deduplication: Prevents redundant processor executions
+- Smart Re-processing: Only re-runs processors affected by data changes
+- Supersession Tracking: Maintains execution history and relationships
+
+## 4. Factor Consolidation
+
+- Processor-Specific Logic: Each processor defines its own consolidation logic for combining outputs
+- Sequential Processing: Processors are consolidated one by one based on processor list order
+- Atomic Updates: Ensures factor consistency across database transactions
+- Database Coordination: Uses `emit: false` flag to prevent loops, database module handles notifications
+
+## 5. External Integration
+
+- Rate Limiting: Respects API rate limits for external services
+- Retry Logic: Exponential backoff for transient failures
+- Response Caching: Reduces redundant API calls
+
+# Processor Configuration
+
+## Minimum Document Configuration
+
+Processors can specify minimum document requirements in the `config` field:
+
+- **Field**: `purchased_processors.config.minimum_document` (integer)
+- **Purpose**: Define minimum documents required for processor execution
+- **Usage**: Checked by processor’s `should_execute()` static method before execution
+- **Effect**: If minimum not met, processor execution is skipped
+
+**Example Configuration:**
+
+```json
+{  "config": {    "minimum_document": 3  }}
+```
+
+**Processor Implementation:**
+
+```python
+class BankStatementProcessor(BaseProcessor):
+    @staticmethod    def should_execute(payload: dict) -> tuple[bool, str | None]:
+        documents = payload.get("documents_list", {}).get("s_bank_statement", [])
+        min_required = payload.get("config", {}).get("minimum_document", 1)
+        if len(documents) < min_required:
+            return False, f"Requires minimum {min_required} bank statements"        return True, None
+```
+
+# Core Responsibilities
+
+The Processor Module serves as the central coordination point for all processor-related operations:
+
+## 1. Event Reception and Routing
+
+- **Pub/Sub Subscription**: Listens to 5 event types from the underwriting system
+- **Event Validation**: Ensures event payloads are complete and valid
+- **Workflow Routing**: Routes events to appropriate workflow handlers
+- **Error Handling**: Manages failed event processing with retry mechanisms
+
+## 2. Processor Lifecycle Management
+
+- **Registration**: Manages processor catalog and tenant subscriptions
+- **Selection**: Determines which processors to execute based on triggers
+- **Execution**: Coordinates processor runs with proper isolation
+- **Monitoring**: Tracks execution status, duration, and costs
+
+## 3. Execution Orchestration
+
+- **Pipeline Execution**: Executes processors through standardized 3-phase pipeline
+- **Dependency Management**: Respects processor dependencies and prerequisites
+- **Resource Allocation**: Manages computational resources and API quotas
+- **Failure Isolation**: Ensures individual processor failures don’t cascade
+
+## 4. Factor Management
+
+- **Extraction**: Collects factor outputs from processor executions
+- **Consolidation**: Merges factors from multiple processors using processor-specific logic
+- **Persistence**: Stores factors with complete lineage and audit trails
+- **Database Coordination**: Uses `emit: false` flag, database module handles notifications
+
+## 5. State Management
+
+- **Execution Tracking**: Maintains complete execution history
+- **Supersession Logic**: Links related executions for version control
+- **Activation/Deactivation**: Controls which executions contribute to factors
+- **Rollback Support**: Enables reverting to previous execution states
+
+# Core Workflows
+
+The Processor Module implements five independent workflows, each handling specific event types:
+
+## Workflow 1: Automatic Execution
+
+**Triggers**: `underwriting.created` and `underwriting.updated` events
+
+**Purpose**: Automatically process underwritings when data becomes available or changes
+
+**Flow**:
+
+```
+Event (created/updated)
+  ↓
+[Parse & Normalize Payload]
+  - Flatten application form to dot paths
+  - Keep owners_list as array
+  - Parse documents_list array (stipulation_type, revision_id, uri, action)
+  ↓
+[Filtration]
+  - Get enabled & auto processors
+  - For each processor:
+    - Match triggers (ANY-match logic)
+    - Generate Payload Hash List
+    - Get Execution List (create/reuse executions)
+  - Build execution list & processor list
+  ↓
+[Execution]
+  - Run pending executions in parallel
+  - Save execution results to database
+  - Isolated failures
+  ↓
+[Consolidation]
+  - For each processor in list
+  - Load current active executions
+  - Run processor's consolidation logic
+  - Update factors (emit: false)
+  - Database module emits notifications
+  ↓
+Result
+
+```
+
+## Workflow 2: Manual Execution
+
+**Triggers**: `underwriting.processor.execute` event
+
+**Purpose**: Force execution of specific processors regardless of triggers with three scenarios
+
+**Scenarios**:
+
+**Scenario 1: Rerun Specific Execution**
+
+```
+Payload: {underwriting_processor_id, execution_id}
+  ↓
+[Get Execution Details]
+  - Load payload, hash from old execution
+  ↓
+[Create New Execution]
+  - Same payload as old
+  - Link via updated_execution_id
+  ↓
+[Execution] (See Workflow 1)
+  ↓
+[Consolidation] (See Workflow 1)
+  ↓
+Result
+
+```
+
+**Scenario 2: Rerun Entire Processor**
+
+```
+Payload: {underwriting_processor_id}
+  ↓
+[Use Current Database State]
+  ↓
+[Generate Payload Hash List] (See Workflow 1)
+  ↓
+[Get Execution List] (See Workflow 1)
+  ↓
+[Execution] (See Workflow 1)
+  ↓
+[Consolidation] (See Workflow 1)
+  ↓
+Result
+
+```
+
+**Scenario 3: Selective Data Execution**
+
+```
+Payload: {underwriting_processor_id, application_form OR document_list}
+  ↓
+[Use Selective Data from Payload]
+  ↓
+[Generate Payload Hash List] (See Workflow 1)
+  ↓
+[Get Execution List] (See Workflow 1)
+  ↓
+[Execution] (See Workflow 1)
+  ↓
+[Consolidation] (See Workflow 1)
+  ↓
+Result
+
+```
+
+## Workflow 3: Processor Consolidation
+
+**Triggers**: `underwriting.processor.consolidate` event
+
+**Purpose**: Re-consolidate processor without creating new executions (triggered after activation/deactivation)
+
+**Flow**:
+
+```
+Event (processor.consolidate)
+  ↓
+[Load Current Active Executions]
+  - Get processor's active executions from database
+  ↓
+[Consolidate]
+  - Run processor's consolidation logic
+  - If no active executions: clear all factors
+  - If has active executions: consolidate from them
+  ↓
+[Update Factors]
+  - Save to database
+  - Database module emits notifications
+  ↓
+Result
+
+```
+
+## Workflow 4: Execution Activation
+
+**Triggers**: `underwriting.execution.activate` event
+
+**Purpose**: Restore application form and/or document states to previous execution state
+
+**Flow**:
+
+```
+Event (execution.activate)
+  ↓
+[NOTE: Database already activated execution]
+  ↓
+[Load Execution & Extract Payload]
+  ↓
+[Determine Processor Type]
+  - Application-based?
+  - Document-based (totality)?
+  - Document-based (each)?
+  ↓
+[Restore Data Based on Type]
+  - Application: Restore application_form (emit: false)
+  - Document Totality: Undelete/delete/update docs (emit: false)
+  - Document Each: Undelete/update specific doc (emit: false)
+  ↓
+[Database Emits Update Message]
+  - After all changes in one transaction
+  ↓
+[Workflow 1 Processes Update]
+  - Finds matching hash (already current)
+  - Runs consolidation naturally
+  ↓
+Result (no loop created)
+
+```
+
+## Workflow 5: Execution Deactivation
+
+**Triggers**: `underwriting.execution.disable` event
+
+**Purpose**: Remove factors from deactivated execution without affecting application form or documents
+
+**Flow**:
+
+```
+Event (execution.disable)
+  ↓
+[NOTE: Database already removed from current execution list]
+  ↓
+[Load Execution Details]
+  - Identify processor
+  ↓
+[Run Consolidation]
+  - Load remaining active executions
+  - If none remain: clear all factors
+  - If some remain: consolidate from them
+  ↓
+[Update Factors]
+  - Save to database
+  - Database module emits notifications
+  ↓
+Result
+
+```
+
+# Listened Events
+
+The Processor Module subscribes to six Pub/Sub topics:
+
+## 1. `underwriting.created`
+
+**Purpose**: Initial processing for new underwritings
+
+**Triggers**: Automatic processor execution based on available data
+
+**Payload**:
+
+- `underwriting_id`: Unique underwriting identifier
+- `application_form`: Flattened application form data with dot notation
+- `documents_list`: Array of documents, each with `stipulation_type`, `revision_id`, `uri`, `action`
+
+**Processing**: Runs all subscribed processors whose triggers match the available data
+
+## 2. `underwriting.updated`
+
+**Purpose**: Re-processing when underwriting data changes
+
+**Triggers**: Smart re-processing of affected processors only
+
+**Payload**:
+
+- `underwriting_id`: Existing underwriting identifier
+- `application_form`: Updated application data with null values included
+- `documents_list`: Array of document changes with `action` field (created/updated/deleted)
+
+**Processing**: Selectively re-runs processors impacted by the changes
+
+## 3. `underwriting.processor.execute`
+
+**Purpose**: Manual/forced execution of specific processors
+
+**Triggers**: User-initiated or system-triggered manual execution
+
+**Payload**:
+
+- `underwriting_processor_id`: Target processor to execute
+- `execution_id` (optional): Specific execution to rerun (Scenario 1)
+- `document_list` (optional): Array of document revision IDs (Scenario 3 - document-based)
+- `application_form` (optional): Application form data (Scenario 3 - application-based)
+
+**Processing**: Executes specified processor regardless of triggers with three scenarios:
+
+- Scenario 1: Rerun specific execution with same payload
+- Scenario 2: Rerun entire processor with current data
+- Scenario 3: Run with selective data from payload
+
+## 4. `underwriting.processor.consolidate`
+
+**Purpose**: Re-consolidate processor after execution selection changes
+
+**Triggers**: After activation/deactivation or manual consolidation request
+
+**Payload**:
+
+- `underwriting_processor_id`: Processor to consolidate
+
+**Processing**: Re-consolidates factors from current active executions (no new executions created)
+
+## 5. `underwriting.execution.activate`
+
+**Purpose**: Activate previous execution and restore data state
+
+**Triggers**: User-initiated rollback to previous state
+
+**Payload**:
+
+- `execution_id`: Execution to activate
+
+**Processing**:
+
+- Database module activates execution first
+- Processor module restores application form or documents with `emit: false`
+- Database emits update message triggering Workflow 1
+- Consolidation happens naturally via Workflow 1
+
+## 6. `underwriting.execution.disable`
+
+**Purpose**: Deactivate execution and clean up factors
+
+**Triggers**: User-initiated execution deactivation
+
+**Payload**:
+
+- `execution_id`: Execution to disable
+
+**Processing**:
+
+- Database module removes from current execution list first
+- Processor module runs consolidation to update factors
+- No application form or document changes
+
+# Data Flow
+
+## Input Flow
+
+```
+External Systems
+    │
+    ├─> REST API Calls
+    │       ↓
+    │   API Endpoint
+    │       ↓
+    │   Publish Event to Pub/Sub ───┐
+    │                               │
+    └─> Direct Pub/Sub Events ──────┤
+                                    ↓
+                              Pub/Sub Topics
+                                    ↓
+                              Event Handler
+                                    ↓
+                              Workflow Router
+                                    ↓
+                            Processor Orchestrator
+
+```
+
+## Processing Flow
+
+```
+Processor Orchestrator
+    │
+    ├─> Processor Selection (Filter by Triggers)
+    │
+    ├─> Execution Planning (Determine execution strategy)
+    │
+    ├─> Processor Execution (Run through 3-phase pipeline)
+    │      │
+    │      ├─> Processor 1 ─> Pre-extraction ─> Extraction ─> Post-extraction ─> Persist
+    │      ├─> Processor 2 ─> Pre-extraction ─> Extraction ─> Post-extraction ─> Persist
+    │      └─> Processor N ─> Pre-extraction ─> Extraction ─> Post-extraction ─> Persist
+    │
+    ├─> Invalidate Executions & Factors (From deletions/supersession)
+    │
+    ├─> Factor Consolidation (Read active executions, merge outputs)
+    │
+    └─> Data Persistence (Save factors & application data with lineage)
+
+```
+
+## Output Flow
+
+```
+Data Persistence
+    │
+    ├─> Database Updates (factors, application data, executions, history)
+    │
+    ├─> Event Emission (underwriting.processing.completed)
+    │
+    └─> Audit Logging (execution trails, changes)
+
+```
+
+# Key Design Decisions
+
+## 1. Event-Driven Architecture
+
+**Decision**: Use Pub/Sub for all inter-module communication
+
+**Rationale**:
+
+- Decouples modules for independent scaling
+- Enables asynchronous processing for better performance
+- Provides natural retry and error handling mechanisms
+- Facilitates event sourcing and audit trails
+
+## 2. Hash-Based Execution Management
+
+**Decision**: Use input hash to identify unique executions
+
+**Rationale**:
+
+- Prevents redundant processing of identical inputs
+- Enables smart re-processing when inputs change
+- Simplifies supersession and version tracking
+- Reduces unnecessary API calls and costs
+
+## 3. Factor Consolidation Strategy
+
+**Decision**: Separate execution outputs from consolidated factors, with each processor defining its own consolidation logic
+
+**Rationale**:
+
+- Each processor knows how to consolidate its own outputs (e.g., Bank Statement averages revenues, Credit Check takes latest score)
+- Enables flexible factor merging strategies per processor type
+- Allows consolidation without re-execution
+- Facilitates rollback and what-if analysis
+- Database module handles factor update notifications to prevent loops
+
+## 4. Workflow Isolation
+
+**Decision**: Five independent workflows for different event topics
+
+**Rationale**:
+
+- Clear separation of concerns for each operation type
+- Independent failure domains prevent cascading errors
+- Easier to reason about and maintain
+- Supports different execution strategies per workflow
+- Separate activation and deactivation workflows prevent complexity
+
+## 5. Atomic Execution Semantics
+
+**Decision**: Execute processors through 3-phase pipeline with all-or-nothing semantics
+
+**Rationale**:
+
+- Ensures complete transactional integrity with no partial success states
+- Simplifies error handling and debugging with clear failure points
+- Maintains data consistency across all processing phases
+- Enables reliable rollback and what-if analysis capabilities
+
+# Execution Strategy
+
+The Processor Module implements a **3-phase execution pipeline** for each processor:
+
+## Phase 1: Pre-Extraction
+
+- **Input Prevalidation**: Verify documents exist and are of correct type
+- **Input Transformation**: Normalize and transform input data
+- **Input Validation**: Validate structure and required fields
+
+## Phase 2: Extraction
+
+- **Output Extraction**: Extract and consolidate outputs from all inputs into single result
+- **All-or-Nothing**: If any input fails, entire execution fails
+
+## Phase 3: Post-Extraction
+
+- **Result Validation**: Ensure outputs are consistent and complete
+- **Execution Persistence**: Save execution record with outputs to database
+- **Factor Updates**: Update factors table with extracted factor values
+- **Application Data Updates**: Update application form data if processor enriched it
+
+## Atomic Execution Semantics
+
+- **Atomic Success**: Complete processing of all inputs constitutes success
+- **Atomic Failure**: Any input failure results in complete execution termination
+- **No Partial Success**: The system maintains transactional integrity
+
+# Error Handling Strategy
+
+## Exception Types
+
+Processors raise specific exceptions for different execution phases:
+
+### Pre-Extraction Phase Exceptions
+
+- **PrevalidationError**: Document existence or type check failures
+- **InputValidationError**: Invalid input format or missing required fields
+- **TransformationError**: Data conversion or normalization errors
+
+### Extraction Phase Exceptions
+
+- **FactorExtractionError**: General extraction failures during data extraction
+- **ApiError**: External API call failures (network, authentication, rate limiting)
+- **DataTransformationError**: Errors during data splicing, chunking, or normalization
+
+### Post-Extraction Phase Exceptions
+
+- **ResultValidationError**: Result validation failures
+
+## Error Categories
+
+### 1. Transient Errors (Retryable)
+
+- Network timeouts
+- Rate limit exceeded
+- Temporary service unavailability
+- Database connection failures
+
+**Handling**: Handled at processor execution level with automatic retry and exponential backoff (3 attempts per processor)
+
+### 2. Permanent Errors (Non-Retryable)
+
+- Invalid processor configuration
+- Missing required data
+- Authentication failures
+- Business rule violations
+
+**Handling**: Fail fast, log error, notify user, no retry
+
+### 3. Partial Failures
+
+- Some processors succeed, others fail in multi-processor workflows
+- Individual processor execution maintains atomic semantics (all-or-nothing)
+
+**Handling**: Save successful results, flag failures, allow selective retry
+
+# External API Integration
+
+## Base Client Architecture
+
+The Processor Module provides a standardized `BaseAPIClient` class for all external API integrations. This ensures consistent authentication, error handling, rate limiting, and retry logic across all external services.
+
+### Base Client Pattern
+
+```python
+class BaseAPIClient:
+    def __init__(self, config: APIConfig):
+        self.base_url = config.base_url
+        self.timeout = config.timeout
+        self.max_retries = config.max_retries
+        self.auth_strategy = config.auth_strategy
+    def request(self, method: str, endpoint: str, **kwargs) -> APIResponse:
+        # Handles authentication, retry, rate limiting        pass
+```
+
+### Authentication Strategies
+
+The system supports multiple authentication strategies through a strategy pattern:
+
+**1. API Key Authentication**
+
+```python
+class APIKeyAuth(AuthStrategy):
+    def __init__(self, api_key: str, header_name: str = "X-API-Key"):
+        self.api_key = api_key
+        self.header_name = header_name
+    def apply(self, request: HTTPRequest) -> HTTPRequest:
+        request.headers[self.header_name] = self.api_key
+        return request
+```
+
+**2. OAuth2 Bearer Token**
+
+```python
+class OAuth2Auth(AuthStrategy):
+    def __init__(self, token_url: str, client_id: str, client_secret: str):
+        self.token_url = token_url
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self._token = None        self._token_expiry = None    def apply(self, request: HTTPRequest) -> HTTPRequest:
+        token = self._get_or_refresh_token()
+        request.headers["Authorization"] = f"Bearer {token}"        return request
+```
+
+**3. Basic Authentication**
+
+```python
+class BasicAuth(AuthStrategy):
+    def __init__(self, username: str, password: str):
+        self.username = username
+        self.password = password
+    def apply(self, request: HTTPRequest) -> HTTPRequest:
+        credentials = base64.b64encode(f"{self.username}:{self.password}")
+        request.headers["Authorization"] = f"Basic {credentials}"        return request
+```
+
+### Using Base Client in External API Processors
+
+**Example: Credit Bureau Client**
+
+```python
+class ExperianClient(BaseAPIClient):
+    def __init__(self):
+        config = APIConfig(
+            base_url="<https://api.experian.com>",
+            timeout=30,
+            max_retries=3,
+            auth_strategy=OAuth2Auth(
+                token_url="<https://auth.experian.com/oauth/token>",
+                client_id=settings.EXPERIAN_CLIENT_ID,
+                client_secret=settings.EXPERIAN_CLIENT_SECRET
+            )
+        )
+        super().__init__(config)
+    def get_business_credit_report(self, ein: str) -> dict:
+        response = self.request(
+            method="POST",
+            endpoint="/business/credit-report",
+            json={"ein": ein}
+        )
+        return response.json()
+```
+
+**Example: Thomson Reuters CLEAR Client**
+
+```python
+class CLEARClient(BaseAPIClient):
+    def __init__(self):
+        config = APIConfig(
+            base_url="<https://api.thomsonreuters.com/clear>",
+            timeout=45,
+            max_retries=3,
+            auth_strategy=APIKeyAuth(
+                api_key=settings.CLEAR_API_KEY,
+                header_name="X-CLEAR-Key"            )
+        )
+        super().__init__(config)
+    def search_business(self, name: str, state: str) -> dict:
+        response = self.request(
+            method="GET",
+            endpoint="/business/search",
+            params={"name": name, "state": state}
+        )
+        return response.json()
+```
+
+### Built-in Features
+
+**Rate Limiting**
+
+- Token bucket algorithm for rate limit compliance
+- Automatic backoff when rate limits are detected
+- Per-service rate limit configuration
+
+**Retry Logic**
+
+- Automatic retry with exponential backoff
+- Configurable max retries (default: 3)
+- Retry on transient errors (timeouts, 5xx errors)
+- No retry on client errors (4xx except 429)
+
+**Error Handling**
+
+- Standardized error responses across all clients
+- Automatic error classification (transient vs permanent)
+- Detailed error logging with request/response context
+
+**Response Caching**
+
+- Optional response caching to reduce redundant API calls
+- Configurable TTL per endpoint
+- Cache invalidation on data changes
