@@ -9,6 +9,16 @@ from typing import Any, Optional
 import json
 import hashlib
 from datetime import datetime
+from decimal import Decimal
+
+
+def _json_serial(obj):
+    """JSON serializer for objects not serializable by default."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    return str(obj)  # Fallback for any other type
 
 
 class TestWorkflowRepository:
@@ -82,13 +92,13 @@ class TestWorkflowRepository:
                 underwriting_id,
                 workflow_name,
                 stage,
-                json.dumps(payload),
+                json.dumps(payload, default=_json_serial),
                 payload_hash,
-                json.dumps(output) if output else None,
+                json.dumps(output, default=_json_serial) if output else None,
                 status,
                 error_message,
                 execution_time_ms,
-                json.dumps(metadata) if metadata else None
+                json.dumps(metadata, default=_json_serial) if metadata else None
             ))
             
             result = cursor.fetchone()
@@ -194,17 +204,6 @@ class TestWorkflowRepository:
     
     def _generate_hash(self, payload: dict[str, Any]) -> str:
         """Generate hash from payload for deduplication tracking."""
-        from decimal import Decimal
-        from datetime import datetime
-        
-        def json_serial(obj):
-            """JSON serializer for objects not serializable by default."""
-            if isinstance(obj, datetime):
-                return obj.isoformat()
-            if isinstance(obj, Decimal):
-                return float(obj)
-            return str(obj)  # Fallback for any other type
-        
-        payload_str = json.dumps(payload, sort_keys=True, default=json_serial)
+        payload_str = json.dumps(payload, sort_keys=True, default=_json_serial)
         return hashlib.sha256(payload_str.encode()).hexdigest()[:16]  # Short hash for readability
 
