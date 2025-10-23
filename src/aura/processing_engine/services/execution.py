@@ -117,7 +117,7 @@ def run_single_execution(
         if not processor_registry.is_processor_registered(processor_name):
             raise Exception(f"Processor not registered: {processor_name}")
 
-        processor_class = processor_registry.get_processor_class(processor_name)
+        processor_class = processor_registry.get_processor(processor_name)
         processor = processor_class(processor_repo=processor_repo)
         processor._underwriting_processor_id = underwriting_processor_id
 

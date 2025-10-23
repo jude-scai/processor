@@ -56,16 +56,16 @@ def filtration(
     for processor_config in processors:
         print(f"  Checking processor: {processor_config['processor']}")
 
-        prepare_result = prepare_processor(
+        preparation = prepare_processor(
             underwriting_processor_id=processor_config["id"],
             underwriting_data=underwriting,
             processor_config=processor_config,
         )
 
-        if prepare_result is None:
+        if preparation is None:
             print("    ℹ️  No triggers matched - skipped")
-        elif isinstance(prepare_result, list):
-            if len(prepare_result) == 0:
+        elif isinstance(preparation, list):
+            if len(preparation) == 0:
                 skipped_count = len(processor_config.get("current_executions_list", []))
                 print("    ✅ Triggers matched, no new executions needed")
                 if skipped_count > 0:
@@ -74,11 +74,11 @@ def filtration(
                     )
             else:
                 print(
-                    f"    ✅ Triggers matched, {len(prepare_result)} new execution(s)"
+                    f"    ✅ Triggers matched, {len(preparation)} new execution(s)"
                 )
 
             processor_list.append(processor_config["id"])
-            execution_list.extend(prepare_result)
+            execution_list.extend(preparation)
     return {
         "processor_list": processor_list,
         "execution_list": execution_list,
@@ -93,7 +93,7 @@ def prepare_processor(
     duplicate: bool = False,
 ) -> Optional[list[str]]:
     """
-    Prepare processor: Determine if processor should participate.
+    Preparation: Determine if processor should participate.
 
     Steps:
     1. Format payload list (based on processor type)
@@ -113,18 +113,11 @@ def prepare_processor(
     """
     test_workflow_repo = TestWorkflowRepository()
 
-    processor_registry = get_registry()
-    if not processor_registry.is_processor_registered(processor_config["processor"]):
-        print(f"      ⚠️  Processor not registered: {processor_config['processor']}")
-        return None
-
+    registry = get_registry()
+    processor_class = registry.get_processor(processor_config["processor"])
     payload_list = format_payload_list_util(
-        processor_type=processor_registry.get_processor_class(
-            processor_config["processor"]
-        ).PROCESSOR_TYPE,
-        processor_triggers=processor_registry.get_processor_class(
-            processor_config["processor"]
-        ).PROCESSOR_TRIGGERS,
+        processor_type=processor_class.PROCESSOR_TYPE,
+        processor_triggers=processor_class.PROCESSOR_TRIGGERS,
         underwriting_data=underwriting_data,
     )
 
@@ -136,9 +129,7 @@ def prepare_processor(
             underwriting_processor_id=underwriting_processor_id,
             payload=payload,
             processor_config=processor_config,
-            processor_triggers=processor_registry.get_processor_class(
-                processor_config["processor"]
-            ).PROCESSOR_TRIGGERS,
+            processor_triggers=processor_class.PROCESSOR_TRIGGERS,
             duplicate=duplicate,
         )
         for payload in payload_list

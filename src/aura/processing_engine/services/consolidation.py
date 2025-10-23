@@ -68,7 +68,7 @@ def consolidation(
                 print(f"    ⚠️  Processor not registered: {processor_name}")
                 continue
 
-            processor_class = processor_registry.get_processor_class(processor_name)
+            processor_class = processor_registry.get_processor(processor_name)
 
             consolidated_factors = processor_class.consolidate(active_executions)
 
