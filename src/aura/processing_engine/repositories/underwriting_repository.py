@@ -42,12 +42,12 @@ class UnderwritingRepository:
         merge: bool = True
     ) -> bool:
         """
-        Save or update application form data.
+        Save or update application form data to individual columns.
         
         Args:
             underwriting_id: The underwriting ID
             form_data: Dictionary with dot-notation keys (e.g., "merchant.ein")
-            merge: If True, merge with existing data; if False, replace completely
+            merge: If True, only update provided fields; if False, update all fields
             
         Returns:
             True if successful, False otherwise
@@ -60,33 +60,47 @@ class UnderwritingRepository:
             }
         """
         try:
-            if merge:
-                # Get existing application form
-                cursor = self.db.cursor()
-                cursor.execute("""
-                    SELECT application_form 
-                    FROM underwritings 
-                    WHERE id = %s
-                """, (underwriting_id,))
-                
-                result = cursor.fetchone()
-                existing_form = result['application_form'] if result else {}
-                
-                # Merge new data with existing (new data takes precedence)
-                merged_form = {**existing_form, **form_data}
-                form_to_save = merged_form
-            else:
-                # Replace completely
-                form_to_save = form_data
-            
-            # Update underwriting record
             cursor = self.db.cursor()
-            cursor.execute("""
-                UPDATE underwritings 
-                SET application_form = %s,
-                    updated_at = CURRENT_TIMESTAMP
+            
+            # Build UPDATE statement for provided fields
+            update_fields = []
+            params = []
+            
+            # Map dot-notation keys to column names
+            field_mapping = {
+                "merchant.name": "merchant_name",
+                "merchant.dba_name": "merchant_dba_name",
+                "merchant.ein": "merchant_ein",
+                "merchant.industry": "merchant_industry",
+                "merchant.email": "merchant_email",
+                "merchant.phone": "merchant_phone",
+                "merchant.website": "merchant_website",
+                "merchant.entity_type": "merchant_entity_type",
+                "merchant.incorporation_date": "merchant_incorporation_date",
+                "merchant.state_of_incorporation": "merchant_state_of_incorporation",
+            }
+            
+            for dot_key, column_name in field_mapping.items():
+                if dot_key in form_data:
+                    update_fields.append(f"{column_name} = %s")
+                    params.append(form_data[dot_key])
+            
+            if not update_fields:
+                # No fields to update
+                return True
+            
+            # Add updated_at
+            update_fields.append("updated_at = CURRENT_TIMESTAMP")
+            
+            # Build and execute UPDATE query
+            params.append(underwriting_id)
+            query = f"""
+                UPDATE underwriting 
+                SET {', '.join(update_fields)}
                 WHERE id = %s
-            """, (json.dumps(form_to_save), underwriting_id))
+            """
+            
+            cursor.execute(query, tuple(params))
             
             self.db.commit()
             return True
@@ -153,8 +167,8 @@ class UnderwritingRepository:
             
             # Step 1: Get existing owner IDs from database
             cursor.execute("""
-                SELECT owner_id 
-                FROM owners 
+                SELECT id as owner_id 
+                FROM owner 
                 WHERE underwriting_id = %s AND enabled = true
             """, (underwriting_id,))
             
@@ -177,7 +191,7 @@ class UnderwritingRepository:
                 if owner_id and owner_id in existing_owner_ids:
                     # EXISTING OWNER - UPDATE
                     cursor.execute("""
-                        UPDATE owners 
+                        UPDATE owner 
                         SET first_name = %s,
                             last_name = %s,
                             email = %s,
@@ -189,7 +203,7 @@ class UnderwritingRepository:
                             primary_owner = %s,
                             updated_at = CURRENT_TIMESTAMP,
                             updated_by = %s
-                        WHERE owner_id = %s
+                        WHERE id = %s
                     """, (
                         owner_data.get('first_name'),
                         owner_data.get('last_name'),
@@ -209,8 +223,8 @@ class UnderwritingRepository:
                     # NEW OWNER - INSERT
                     new_owner_id = self._generate_uuid()
                     cursor.execute("""
-                        INSERT INTO owners (
-                            owner_id,
+                        INSERT INTO owner (
+                            id,
                             underwriting_id,
                             first_name,
                             last_name,
@@ -250,11 +264,11 @@ class UnderwritingRepository:
             # Step 5: Soft delete removed owners
             for removed_id in removed_owner_ids:
                 cursor.execute("""
-                    UPDATE owners 
+                    UPDATE owner 
                     SET enabled = false,
                         updated_at = CURRENT_TIMESTAMP,
                         updated_by = %s
-                    WHERE owner_id = %s
+                    WHERE id = %s
                 """, (updated_by, removed_id))
                 operations['removed'].append(removed_id)
             
@@ -355,7 +369,7 @@ class UnderwritingRepository:
     def _generate_uuid(self) -> str:
         """Generate a UUID for new records."""
         import uuid
-        return f"owner_{uuid.uuid4().hex[:12]}"
+        return str(uuid.uuid4())
     
     def get_owners(
         self,
@@ -376,11 +390,11 @@ class UnderwritingRepository:
             cursor = self.db.cursor()
             
             query = """
-                SELECT owner_id, first_name, last_name, email, 
+                SELECT id as owner_id, first_name, last_name, email, 
                        phone_mobile, phone_home, phone_work, ssn,
                        ownership_percent, primary_owner, enabled,
                        created_at, updated_at
-                FROM owners 
+                FROM owner 
                 WHERE underwriting_id = %s
             """
             
@@ -410,11 +424,11 @@ class UnderwritingRepository:
         try:
             cursor = self.db.cursor()
             cursor.execute("""
-                UPDATE owners 
+                UPDATE owner 
                 SET enabled = true,
                     updated_at = CURRENT_TIMESTAMP,
                     updated_by = %s
-                WHERE owner_id = %s
+                WHERE id = %s
             """, (user_id, owner_id))
             
             self.db.commit()
@@ -424,4 +438,282 @@ class UnderwritingRepository:
             self.db.rollback()
             print(f"Error restoring owner: {e}")
             return False
+    
+    # =========================================================================
+    # UNDERWRITING RETRIEVAL
+    # =========================================================================
+    
+    def get_underwriting_with_details(
+        self,
+        underwriting_id: str
+    ) -> Optional[dict[str, Any]]:
+        """
+        Get a single underwriting with complete details including merchant and owners.
+        
+        Args:
+            underwriting_id: The underwriting ID
+            
+        Returns:
+            Complete underwriting dictionary with merchant, owners, and addresses
+            or None if not found
+        """
+        try:
+            cursor = self.db.cursor()
+            
+            # Get underwriting
+            cursor.execute("""
+                SELECT 
+                    id,
+                    organization_id,
+                    serial_number,
+                    status,
+                    application_type,
+                    application_ref_id,
+                    request_amount,
+                    request_date,
+                    purpose,
+                    merchant_name,
+                    merchant_dba_name,
+                    merchant_ein,
+                    merchant_industry,
+                    merchant_email,
+                    merchant_phone,
+                    merchant_website,
+                    merchant_entity_type,
+                    merchant_incorporation_date,
+                    merchant_state_of_incorporation,
+                    created_at,
+                    updated_at
+                FROM underwriting
+                WHERE id = %s
+            """, (underwriting_id,))
+            
+            uw = cursor.fetchone()
+            
+            if not uw:
+                return None
+            
+            underwriting_data = dict(uw)
+            
+            # Get owners with addresses
+            owners_with_addresses = self._get_owners_with_addresses(underwriting_id, cursor)
+            
+            # Get merchant address
+            merchant_address = self._get_merchant_address(underwriting_id, cursor)
+            
+            # Extract merchant details from underwriting columns (not application_form)
+            merchant_details = self._build_merchant_details_from_columns(
+                underwriting_data,
+                merchant_address
+            )
+            
+            cursor.close()
+            
+            # Build complete underwriting object
+            return {
+                "id": underwriting_data['id'],
+                "organization_id": underwriting_data['organization_id'],
+                "serial_number": underwriting_data['serial_number'],
+                "status": underwriting_data['status'],
+                "application_type": underwriting_data['application_type'],
+                "application_ref_id": underwriting_data['application_ref_id'],
+                "request_amount": float(underwriting_data['request_amount']) if underwriting_data['request_amount'] else None,
+                "request_date": str(underwriting_data['request_date']) if underwriting_data['request_date'] else None,
+                "purpose": underwriting_data['purpose'],
+                "merchant": merchant_details,
+                "owners": owners_with_addresses,
+                "created_at": str(underwriting_data['created_at']),
+                "updated_at": str(underwriting_data['updated_at']),
+            }
+            
+        except Exception as e:
+            print(f"Error fetching underwriting details: {e}")
+            return None
+    
+    def list_all_underwritings(self) -> list[dict[str, Any]]:
+        """
+        List all underwritings with complete details.
+        
+        Returns:
+            List of underwritings with merchant, owners, and addresses
+        """
+        try:
+            cursor = self.db.cursor()
+            
+            # Get all underwritings
+            cursor.execute("""
+                SELECT 
+                    id,
+                    organization_id,
+                    serial_number,
+                    status,
+                    application_type,
+                    application_ref_id,
+                    request_amount,
+                    request_date,
+                    purpose,
+                    merchant_name,
+                    merchant_dba_name,
+                    merchant_ein,
+                    merchant_industry,
+                    merchant_email,
+                    merchant_phone,
+                    merchant_website,
+                    merchant_entity_type,
+                    merchant_incorporation_date,
+                    merchant_state_of_incorporation,
+                    created_at,
+                    updated_at
+                FROM underwriting
+                ORDER BY created_at DESC
+            """)
+            
+            underwritings = cursor.fetchall()
+            
+            # For each underwriting, get owners and addresses
+            result = []
+            for uw in underwritings:
+                underwriting_data = dict(uw)
+                
+                # Get owners with addresses
+                owners_with_addresses = self._get_owners_with_addresses(uw['id'], cursor)
+                
+                # Get merchant address
+                merchant_address = self._get_merchant_address(uw['id'], cursor)
+                
+                # Build merchant details from columns
+                merchant_details = self._build_merchant_details_from_columns(
+                    underwriting_data,
+                    merchant_address
+                )
+                
+                # Build complete underwriting object
+                complete_underwriting = {
+                    "id": underwriting_data['id'],
+                    "organization_id": underwriting_data['organization_id'],
+                    "serial_number": underwriting_data['serial_number'],
+                    "status": underwriting_data['status'],
+                    "application_type": underwriting_data['application_type'],
+                    "application_ref_id": underwriting_data['application_ref_id'],
+                    "request_amount": float(underwriting_data['request_amount']) if underwriting_data['request_amount'] else None,
+                    "request_date": str(underwriting_data['request_date']) if underwriting_data['request_date'] else None,
+                    "purpose": underwriting_data['purpose'],
+                    "merchant": merchant_details,
+                    "owners": owners_with_addresses,
+                    "created_at": str(underwriting_data['created_at']),
+                    "updated_at": str(underwriting_data['updated_at']),
+                }
+                
+                result.append(complete_underwriting)
+            
+            cursor.close()
+            return result
+            
+        except Exception as e:
+            print(f"Error listing underwritings: {e}")
+            return []
+    
+    # =========================================================================
+    # PRIVATE HELPER METHODS
+    # =========================================================================
+    
+    def _get_owners_with_addresses(
+        self,
+        underwriting_id: str,
+        cursor: Any
+    ) -> list[dict[str, Any]]:
+        """Get owners with their addresses for an underwriting."""
+        # Get owners
+        cursor.execute("""
+            SELECT 
+                id as owner_id,
+                first_name,
+                last_name,
+                email,
+                phone_mobile,
+                phone_home,
+                phone_work,
+                birthday,
+                fico_score,
+                ssn,
+                ownership_percent,
+                primary_owner,
+                enabled,
+                created_at,
+                updated_at
+            FROM owner
+            WHERE underwriting_id = %s AND enabled = true
+            ORDER BY primary_owner DESC, first_name
+        """, (underwriting_id,))
+        
+        owners = cursor.fetchall()
+        
+        # Get addresses for each owner
+        owners_with_addresses = []
+        for owner in owners:
+            owner_data = dict(owner)
+            
+            # Get address
+            cursor.execute("""
+                SELECT 
+                    id,
+                    addr_1,
+                    addr_2,
+                    city,
+                    state,
+                    zip,
+                    created_at,
+                    updated_at
+                FROM owner_address
+                WHERE owner_id = %s
+            """, (owner['owner_id'],))
+            
+            address = cursor.fetchone()
+            owner_data['address'] = dict(address) if address else None
+            owners_with_addresses.append(owner_data)
+        
+        return owners_with_addresses
+    
+    def _get_merchant_address(
+        self,
+        underwriting_id: str,
+        cursor: Any
+    ) -> Optional[dict[str, Any]]:
+        """Get merchant address for an underwriting."""
+        cursor.execute("""
+            SELECT 
+                id,
+                addr_1,
+                addr_2,
+                city,
+                state,
+                zip,
+                created_at,
+                updated_at
+            FROM merchant_address
+            WHERE underwriting_id = %s
+        """, (underwriting_id,))
+        
+        address = cursor.fetchone()
+        return dict(address) if address else None
+    
+    def _build_merchant_details_from_columns(
+        self,
+        underwriting_data: dict[str, Any],
+        merchant_address: Optional[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Build merchant details from underwriting table columns."""
+        return {
+            "name": underwriting_data.get("merchant_name"),
+            "dba_name": underwriting_data.get("merchant_dba_name"),
+            "ein": underwriting_data.get("merchant_ein"),
+            "industry": underwriting_data.get("merchant_industry"),
+            "email": underwriting_data.get("merchant_email"),
+            "phone": underwriting_data.get("merchant_phone"),
+            "website": underwriting_data.get("merchant_website"),
+            "entity_type": underwriting_data.get("merchant_entity_type"),
+            "incorporation_date": str(underwriting_data.get("merchant_incorporation_date")) if underwriting_data.get("merchant_incorporation_date") else None,
+            "state_of_incorporation": underwriting_data.get("merchant_state_of_incorporation"),
+            "address": merchant_address
+        }
 

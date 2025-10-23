@@ -171,6 +171,101 @@ class BaseProcessor(ABC):
         return executions[-1].output or {}
 
     # =====================================================================
+    # FORMAT PAYLOAD LIST (For Orchestration)
+    # =====================================================================
+    
+    def format_payload_list(self, underwriting_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """
+        Format underwriting data into list of payloads for execution.
+        
+        Implementation varies based on processor type:
+        - APPLICATION: Single payload with application form fields
+        - STIPULATION: Single payload with all matching document revisions
+        - DOCUMENT: One payload per matching document revision
+        
+        Args:
+            underwriting_data: Complete underwriting data including merchant and owners
+            
+        Returns:
+            List of payload dictionaries, or empty list if no triggers matched
+        """
+        if self.PROCESSOR_TYPE == ProcessorType.APPLICATION:
+            return self._format_application_payload(underwriting_data)
+        elif self.PROCESSOR_TYPE == ProcessorType.STIPULATION:
+            return self._format_stipulation_payload(underwriting_data)
+        elif self.PROCESSOR_TYPE == ProcessorType.DOCUMENT:
+            return self._format_document_payload(underwriting_data)
+        else:
+            return []
+    
+    def _format_application_payload(self, underwriting_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Format payload for APPLICATION type processor."""
+        # Get trigger fields from PROCESSOR_TRIGGERS
+        trigger_fields = self.PROCESSOR_TRIGGERS.get('application_form', [])
+        
+        # Build application form from underwriting merchant fields
+        application_form = {}
+        merchant = underwriting_data.get('merchant', {})
+        
+        # Map merchant fields to dot notation
+        field_mapping = {
+            'name': 'merchant.name',
+            'ein': 'merchant.ein',
+            'industry': 'merchant.industry',
+            'email': 'merchant.email',
+            'phone': 'merchant.phone',
+            'website': 'merchant.website',
+            'entity_type': 'merchant.entity_type',
+            'incorporation_date': 'merchant.incorporation_date',
+            'state_of_incorporation': 'merchant.state_of_incorporation',
+        }
+        
+        for field, dot_key in field_mapping.items():
+            value = merchant.get(field)
+            if value is not None:
+                application_form[dot_key] = value
+        
+        # Check if all trigger fields are null
+        has_data = any(application_form.get(field) is not None for field in trigger_fields)
+        
+        if not has_data:
+            return []
+        
+        # Return single payload with application form and owners
+        return [{
+            "application_form": application_form,
+            "owners_list": underwriting_data.get('owners', [])
+        }]
+    
+    def _format_stipulation_payload(self, underwriting_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Format payload for STIPULATION type processor."""
+        # Get stipulation type from PROCESSOR_TRIGGERS
+        trigger_docs = self.PROCESSOR_TRIGGERS.get('documents_list', [])
+        
+        if not trigger_docs:
+            return []
+        
+        stipulation_type = trigger_docs[0]  # e.g., 's_bank_statement'
+        
+        # Filter documents by stipulation type
+        # Note: underwriting_data doesn't have documents yet - need to query separately
+        # For now, return empty (will be enhanced when document integration is added)
+        return []
+    
+    def _format_document_payload(self, underwriting_data: dict[str, Any]) -> list[dict[str, Any]]:
+        """Format payload for DOCUMENT type processor."""
+        # Get stipulation type from PROCESSOR_TRIGGERS
+        trigger_docs = self.PROCESSOR_TRIGGERS.get('documents_list', [])
+        
+        if not trigger_docs:
+            return []
+        
+        # Filter documents and create one payload per document
+        # Note: underwriting_data doesn't have documents yet - need to query separately
+        # For now, return empty (will be enhanced when document integration is added)
+        return []
+
+    # =====================================================================
     # COST TRACKING
     # =====================================================================
 
