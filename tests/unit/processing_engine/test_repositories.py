@@ -26,6 +26,7 @@ from aura.processing_engine.repositories.execution_repository import ExecutionRe
 # FIXTURES
 # =============================================================================
 
+
 @pytest.fixture
 def mock_db():
     """Create a mock database connection."""
@@ -54,15 +55,12 @@ def sample_purchased_processor():
         "name": "Bank Statement Processor",
         "auto": True,
         "status": "active",
-        "config": {
-            "minimum_document": 3,
-            "analysis_window_months": 6
-        },
+        "config": {"minimum_document": 3, "analysis_window_months": 6},
         "price_amount": 500,
         "price_unit": "execution",
         "price_currency": "USD",
         "purchased_at": datetime(2024, 1, 1),
-        "purchased_by": "user_123"
+        "purchased_by": "user_123",
     }
 
 
@@ -78,20 +76,12 @@ def sample_underwriting_processor():
         "name": "Bank Statement Processor",
         "auto": True,
         "enabled": True,
-        "config_override": {
-            "minimum_document": 5
-        },
-        "effective_config": {
-            "minimum_document": 5,
-            "analysis_window_months": 6
-        },
+        "config_override": {"minimum_document": 5},
+        "effective_config": {"minimum_document": 5, "analysis_window_months": 6},
         "current_executions_list": ["exec_001", "exec_002"],
-        "purchased_config": {
-            "minimum_document": 3,
-            "analysis_window_months": 6
-        },
+        "purchased_config": {"minimum_document": 3, "analysis_window_months": 6},
         "price_amount": 500,
-        "price_unit": "execution"
+        "price_unit": "execution",
     }
 
 
@@ -112,13 +102,8 @@ def sample_execution():
             ]
         },
         "payload_hash": "hash_abc123",
-        "output": {
-            "monthly_revenues": [45000.0],
-            "avg_monthly_revenue": 45000.0
-        },
-        "factors_delta": {
-            "f_avg_monthly_revenue": 45000.0
-        },
+        "output": {"monthly_revenues": [45000.0], "avg_monthly_revenue": 45000.0},
+        "factors_delta": {"f_avg_monthly_revenue": 45000.0},
         "document_revision_ids": ["rev_001"],
         "document_ids_hash": "doc_hash_123",
         "run_cost_cents": 50,
@@ -128,13 +113,14 @@ def sample_execution():
         "failed_reason": None,
         "updated_execution_id": None,
         "created_at": datetime(2024, 1, 15, 9, 55, 0),
-        "updated_at": datetime(2024, 1, 15, 10, 5, 0)
+        "updated_at": datetime(2024, 1, 15, 10, 5, 0),
     }
 
 
 # =============================================================================
 # PROCESSOR REPOSITORY TESTS
 # =============================================================================
+
 
 class TestProcessorRepositoryStructure:
     """Test ProcessorRepository class structure and initialization."""
@@ -154,7 +140,7 @@ class TestProcessorRepositoryStructure:
             "get_underwriting_processors",
             "update_current_executions_list",
             "get_effective_config",
-            "get_processor_by_name"
+            "get_processor_by_name",
         ]
         for method_name in required_methods:
             assert hasattr(processor_repo, method_name)
@@ -190,9 +176,7 @@ class TestPurchasedProcessors:
     def test_get_purchased_processors_with_filters(self, processor_repo):
         """Test filtering purchased processors by enabled/auto flags."""
         result = processor_repo.get_purchased_processors_by_organization(
-            "org_123",
-            enabled_only=True,
-            auto_only=True
+            "org_123", enabled_only=True, auto_only=True
         )
         assert result == []
 
@@ -213,17 +197,14 @@ class TestUnderwritingProcessors:
     def test_get_underwriting_processors_with_filters(self, processor_repo):
         """Test filtering underwriting processors by enabled/auto flags."""
         result = processor_repo.get_underwriting_processors(
-            "uw_001",
-            enabled_only=True,
-            auto_only=True
+            "uw_001", enabled_only=True, auto_only=True
         )
         assert result == []
 
     def test_update_current_executions_list_returns_false(self, processor_repo):
         """Test that update_current_executions_list returns False (not implemented)."""
         result = processor_repo.update_current_executions_list(
-            "up_789",
-            ["exec_001", "exec_002"]
+            "up_789", ["exec_001", "exec_002"]
         )
         assert result is False
 
@@ -245,6 +226,7 @@ class TestProcessorConfiguration:
 # =============================================================================
 # EXECUTION REPOSITORY TESTS
 # =============================================================================
+
 
 class TestExecutionRepositoryStructure:
     """Test ExecutionRepository class structure and initialization."""
@@ -268,7 +250,7 @@ class TestExecutionRepositoryStructure:
             "get_execution_chain",
             "activate_execution",
             "deactivate_execution",
-            "get_execution_count"
+            "get_execution_count",
         ]
         for method_name in required_methods:
             assert hasattr(execution_repo, method_name)
@@ -286,7 +268,7 @@ class TestExecutionCreation:
             organization_id="org_456",
             processor_name="p_bank_statement",
             payload={"test": "data"},
-            payload_hash="hash_123"
+            payload_hash="hash_123",
         )
 
         # Should return a UUID string
@@ -304,7 +286,7 @@ class TestExecutionCreation:
             payload={"test": "data"},
             payload_hash="hash_123",
             document_revision_ids=["rev_001", "rev_002"],
-            document_ids_hash="doc_hash_123"
+            document_ids_hash="doc_hash_123",
         )
 
         assert isinstance(execution_id, str)
@@ -321,18 +303,14 @@ class TestExecutionStatusUpdates:
     def test_update_execution_status_returns_false(self, execution_repo):
         """Test that update_execution_status returns False (not implemented)."""
         result = execution_repo.update_execution_status(
-            "exec_001",
-            "running",
-            started_at=datetime.utcnow()
+            "exec_001", "running", started_at=datetime.utcnow()
         )
         assert result is False
 
     def test_update_execution_status_with_completion(self, execution_repo):
         """Test updating status to completed with timestamp."""
         result = execution_repo.update_execution_status(
-            "exec_001",
-            "completed",
-            completed_at=datetime.utcnow()
+            "exec_001", "completed", completed_at=datetime.utcnow()
         )
         assert result is False  # Not implemented yet
 
@@ -342,7 +320,7 @@ class TestExecutionStatusUpdates:
             "exec_001",
             "failed",
             failed_code="VALIDATION_ERROR",
-            failed_reason="Missing required field: merchant.name"
+            failed_reason="Missing required field: merchant.name",
         )
         assert result is False  # Not implemented yet
 
@@ -353,7 +331,7 @@ class TestExecutionStatusUpdates:
             output={"test": "output"},
             factors_delta={"f_test": 123},
             run_cost_cents=50,
-            completed_at=datetime.utcnow()
+            completed_at=datetime.utcnow(),
         )
         assert result is False
 
@@ -379,9 +357,7 @@ class TestExecutionRetrieval:
     def test_get_executions_by_underwriting_with_filters(self, execution_repo):
         """Test filtering executions by processor and status."""
         result = execution_repo.get_executions_by_underwriting(
-            "uw_001",
-            processor_name="p_bank_statement",
-            status="completed"
+            "uw_001", processor_name="p_bank_statement", status="completed"
         )
         assert result == []
 
@@ -441,8 +417,7 @@ class TestHelperMethods:
     def test_get_execution_count_with_processor_filter(self, execution_repo):
         """Test get_execution_count with processor filter."""
         result = execution_repo.get_execution_count(
-            "uw_001",
-            processor_name="p_bank_statement"
+            "uw_001", processor_name="p_bank_statement"
         )
         assert result == 0
 
@@ -450,6 +425,7 @@ class TestHelperMethods:
 # =============================================================================
 # INTEGRATION PATTERNS TESTS
 # =============================================================================
+
 
 class TestRepositoryPatterns:
     """Test common repository usage patterns."""
@@ -479,7 +455,7 @@ class TestRepositoryPatterns:
             organization_id="org_456",
             processor_name="p_bank_statement",
             payload={"test": "data"},
-            payload_hash="hash_123"
+            payload_hash="hash_123",
         )
         assert exec_id is not None
 
@@ -492,7 +468,7 @@ class TestRepositoryPatterns:
             output={"result": "data"},
             factors_delta={"f_test": 123},
             run_cost_cents=50,
-            completed_at=datetime.utcnow()
+            completed_at=datetime.utcnow(),
         )
 
     def test_execution_deduplication_pattern(self, execution_repo):
@@ -510,7 +486,7 @@ class TestRepositoryPatterns:
                 organization_id="org_456",
                 processor_name="p_bank_statement",
                 payload={"test": "data"},
-                payload_hash=payload_hash
+                payload_hash=payload_hash,
             )
 
     def test_active_executions_for_consolidation_pattern(self, execution_repo):
@@ -521,4 +497,3 @@ class TestRepositoryPatterns:
         assert isinstance(active_executions, list)
         # In real implementation, would contain only enabled, completed executions
         # that are in current_executions_list
-

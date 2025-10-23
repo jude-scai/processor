@@ -54,7 +54,7 @@ def wait_for_postgres(config: dict, max_retries: int = 30, delay: int = 2) -> bo
                 user=config["user"],
                 password=config["password"],
                 database="postgres",  # Connect to default database first
-                connect_timeout=3
+                connect_timeout=3,
             )
             conn.close()
             print(f"✅ PostgreSQL is ready (attempt {attempt}/{max_retries})")
@@ -80,15 +80,14 @@ def create_database_if_not_exists(config: dict) -> bool:
             port=config["port"],
             user=config["user"],
             password=config["password"],
-            database="postgres"
+            database="postgres",
         )
         conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
         cursor = conn.cursor()
 
         # Check if database exists
         cursor.execute(
-            "SELECT 1 FROM pg_database WHERE datname = %s",
-            (config["database"],)
+            "SELECT 1 FROM pg_database WHERE datname = %s", (config["database"],)
         )
         exists = cursor.fetchone()
 
@@ -120,7 +119,7 @@ def read_schema_file() -> Optional[str]:
     print(f"📖 Reading schema from: {schema_path}")
 
     try:
-        with open(schema_path, 'r', encoding='utf-8') as f:
+        with open(schema_path, "r", encoding="utf-8") as f:
             content = f.read()
         print(f"✅ Schema file loaded ({len(content)} bytes)")
         return content
@@ -129,7 +128,30 @@ def read_schema_file() -> Optional[str]:
         return None
 
 
-def execute_migration(config: dict, schema_sql: str, drop_existing: bool = False) -> bool:
+def read_test_workflow_file() -> Optional[str]:
+    """Read the create_test_workflow_table.sql file"""
+    script_dir = Path(__file__).parent
+    test_workflow_path = script_dir / "create_test_workflow_table.sql"
+
+    if not test_workflow_path.exists():
+        print(f"❌ Test workflow file not found: {test_workflow_path}")
+        return None
+
+    print(f"📖 Reading test workflow table from: {test_workflow_path}")
+
+    try:
+        with open(test_workflow_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        print(f"✅ Test workflow file loaded ({len(content)} bytes)")
+        return content
+    except Exception as e:
+        print(f"❌ Error reading test workflow file: {e}")
+        return None
+
+
+def execute_migration(
+    config: dict, schema_sql: str, test_workflow_sql: str, drop_existing: bool = False
+) -> bool:
     """Execute the migration SQL"""
     try:
         # Connect to target database
@@ -138,7 +160,7 @@ def execute_migration(config: dict, schema_sql: str, drop_existing: bool = False
             port=config["port"],
             database=config["database"],
             user=config["user"],
-            password=config["password"]
+            password=config["password"],
         )
         cursor = conn.cursor()
 
@@ -147,7 +169,8 @@ def execute_migration(config: dict, schema_sql: str, drop_existing: bool = False
         # Optionally drop existing tables
         if drop_existing:
             print("⚠️  Dropping existing tables...")
-            cursor.execute("""
+            cursor.execute(
+                """
                 DO $$ DECLARE
                     r RECORD;
                 BEGIN
@@ -155,7 +178,8 @@ def execute_migration(config: dict, schema_sql: str, drop_existing: bool = False
                         EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
                     END LOOP;
                 END $$;
-            """)
+            """
+            )
             conn.commit()
             print("✅ Existing tables dropped")
 
@@ -164,22 +188,30 @@ def execute_migration(config: dict, schema_sql: str, drop_existing: bool = False
         cursor.execute(schema_sql)
         conn.commit()
 
+        print("📝 Executing test workflow table SQL...")
+        cursor.execute(test_workflow_sql)
+        conn.commit()
+
         # Count created tables
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT COUNT(*) FROM information_schema.tables
             WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-        """)
+        """
+        )
         table_count = cursor.fetchone()[0]
 
         print(f"✅ Migration completed successfully!")
         print(f"📊 Total tables created: {table_count}")
 
         # List all tables
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
             ORDER BY table_name
-        """)
+        """
+        )
         tables = [row[0] for row in cursor.fetchall()]
 
         print("\n📋 Tables created:")
@@ -207,7 +239,7 @@ def verify_migration(config: dict) -> bool:
             port=config["port"],
             database=config["database"],
             user=config["user"],
-            password=config["password"]
+            password=config["password"],
         )
         cursor = conn.cursor()
 
@@ -215,20 +247,31 @@ def verify_migration(config: dict) -> bool:
 
         # Check critical tables exist
         critical_tables = [
-            'organization', 'account', 'role', 'permission',
-            'underwriting', 'document', 'document_revision',
-            'organization_processors', 'underwriting_processors', 'processor_executions',
-            'factor', 'factor_snapshot'
+            "organization",
+            "account",
+            "role",
+            "permission",
+            "underwriting",
+            "document",
+            "document_revision",
+            "organization_processors",
+            "underwriting_processors",
+            "processor_executions",
+            "factor",
+            "factor_snapshot",
         ]
 
         missing_tables = []
         for table in critical_tables:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables
                     WHERE table_name = %s
                 )
-            """, (table,))
+            """,
+                (table,),
+            )
             exists = cursor.fetchone()[0]
             if not exists:
                 missing_tables.append(table)
@@ -270,8 +313,12 @@ def main():
     parser.add_argument("--database", "--db", help="Database name (default: from .env)")
     parser.add_argument("--user", help="Database user (default: from .env)")
     parser.add_argument("--password", help="Database password (default: from .env)")
-    parser.add_argument("--drop", action="store_true", help="Drop existing tables before migration")
-    parser.add_argument("--no-wait", action="store_true", help="Don't wait for PostgreSQL to be ready")
+    parser.add_argument(
+        "--drop", action="store_true", help="Drop existing tables before migration"
+    )
+    parser.add_argument(
+        "--no-wait", action="store_true", help="Don't wait for PostgreSQL to be ready"
+    )
 
     args = parser.parse_args()
 
@@ -319,8 +366,17 @@ def main():
         sys.exit(1)
     print()
 
+    # Read test workflow file
+    test_workflow_sql = read_test_workflow_file()
+    if not test_workflow_sql:
+        print("\n❌ Migration aborted: Could not read test workflow file")
+        sys.exit(1)
+    print()
+
     # Execute migration
-    if not execute_migration(config, schema_sql, drop_existing=args.drop):
+    if not execute_migration(
+        config, schema_sql, test_workflow_sql, drop_existing=args.drop
+    ):
         print("\n❌ Migration failed!")
         sys.exit(1)
 
@@ -334,10 +390,11 @@ def main():
     print("=" * 70)
     print("\n🎉 Database is ready for use!")
     print(f"\nConnection string:")
-    print(f"postgresql://{config['user']}:****@{config['host']}:{config['port']}/{config['database']}")
+    print(
+        f"postgresql://{config['user']}:****@{config['host']}:{config['port']}/{config['database']}"
+    )
     print()
 
 
 if __name__ == "__main__":
     main()
-

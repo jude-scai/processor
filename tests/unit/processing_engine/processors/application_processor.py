@@ -13,7 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "src"))
 
 from aura.processing_engine.base_processor import BaseProcessor
-from aura.processing_engine.models import ProcessorType, ExecutionPayload, ValidationResult
+from aura.processing_engine.models import (
+    ProcessorType,
+    ExecutionPayload,
+    ValidationResult,
+)
 
 
 class ApplicationProcessor(BaseProcessor):
@@ -100,7 +104,9 @@ class ApplicationProcessor(BaseProcessor):
         owners_list = []
         for owner in validated_data.get("owners", []):
             owner_data = {
-                "owner_id": owner.get("owner_id"),  # If present, UPDATE; if None, INSERT
+                "owner_id": owner.get(
+                    "owner_id"
+                ),  # If present, UPDATE; if None, INSERT
                 "first_name": owner.get("first_name"),
                 "last_name": owner.get("last_name"),
                 "primary_owner": owner.get("primary_owner", False),
@@ -123,8 +129,7 @@ class ApplicationProcessor(BaseProcessor):
             "business_entity_type": validated_data.get("merchant_entity_type"),
             "owner_count": len(owners_list),
             "has_primary_owner": any(
-                owner.get("primary_owner", False)
-                for owner in owners_list
+                owner.get("primary_owner", False) for owner in owners_list
             ),
         }
 
@@ -154,4 +159,3 @@ class ApplicationProcessor(BaseProcessor):
             result.add_warning(f"Unusually high owner count: {owner_count}")
 
         return result
-

@@ -13,7 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "src"))
 
 from aura.processing_engine.base_processor import BaseProcessor
-from aura.processing_engine.models import ProcessorType, ExecutionPayload, ValidationResult
+from aura.processing_engine.models import (
+    ProcessorType,
+    ExecutionPayload,
+    ValidationResult,
+)
 
 
 class DocumentProcessor(BaseProcessor):
@@ -27,9 +31,7 @@ class DocumentProcessor(BaseProcessor):
     # Required configuration
     PROCESSOR_NAME: str = "p_test_document"
     PROCESSOR_TYPE: ProcessorType = ProcessorType.DOCUMENT
-    PROCESSOR_TRIGGERS: dict[str, list[str]] = {
-        "documents_list": ["s_drivers_license"]
-    }
+    PROCESSOR_TRIGGERS: dict[str, list[str]] = {"documents_list": ["s_drivers_license"]}
     CONFIG: dict[str, Any] = {
         "require_photo": True,
         "check_expiration": True,
@@ -45,7 +47,8 @@ class DocumentProcessor(BaseProcessor):
         # Extract the specific driver's license document for this execution
         # In a real scenario, payload would contain a single document
         documents = [
-            doc for doc in payload.documents_list
+            doc
+            for doc in payload.documents_list
             if doc.get("stipulation_type") == "s_drivers_license"
         ]
 
@@ -166,7 +169,9 @@ class DocumentProcessor(BaseProcessor):
         # Check verification status
         valid_statuses = ["verified", "expired", "missing_photo", "invalid"]
         if output.get("verification_status") not in valid_statuses:
-            result.add_error(f"Invalid verification status: {output.get('verification_status')}")
+            result.add_error(
+                f"Invalid verification status: {output.get('verification_status')}"
+            )
 
         # Add warnings for problematic documents
         if output.get("is_expired", False):
@@ -211,9 +216,8 @@ class DocumentProcessor(BaseProcessor):
             "f_verified_licenses_count": verified_count,
             "f_expired_licenses_count": expired_count,
             "f_verification_rate": (
-                verified_count / len(all_documents)
-                if all_documents else 0.0
+                verified_count / len(all_documents) if all_documents else 0.0
             ),
-            "f_all_licenses_valid": expired_count == 0 and verified_count == len(all_documents),
+            "f_all_licenses_valid": expired_count == 0
+            and verified_count == len(all_documents),
         }
-

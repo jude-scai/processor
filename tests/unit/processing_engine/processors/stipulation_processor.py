@@ -13,7 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "src"))
 
 from aura.processing_engine.base_processor import BaseProcessor
-from aura.processing_engine.models import ProcessorType, ExecutionPayload, ValidationResult
+from aura.processing_engine.models import (
+    ProcessorType,
+    ExecutionPayload,
+    ValidationResult,
+)
 
 
 class StipulationProcessor(BaseProcessor):
@@ -27,9 +31,7 @@ class StipulationProcessor(BaseProcessor):
     # Required configuration
     PROCESSOR_NAME: str = "p_test_stipulation"
     PROCESSOR_TYPE: ProcessorType = ProcessorType.STIPULATION
-    PROCESSOR_TRIGGERS: dict[str, list[str]] = {
-        "documents_list": ["s_bank_statement"]
-    }
+    PROCESSOR_TRIGGERS: dict[str, list[str]] = {"documents_list": ["s_bank_statement"]}
     CONFIG: dict[str, Any] = {
         "minimum_document": 3,
         "analysis_window_months": 6,
@@ -42,7 +44,8 @@ class StipulationProcessor(BaseProcessor):
         """
         documents = payload.get("documents_list", [])
         bank_statements = [
-            doc for doc in documents
+            doc
+            for doc in documents
             if doc.get("stipulation_type") == "s_bank_statement"
         ]
 
@@ -58,7 +61,8 @@ class StipulationProcessor(BaseProcessor):
         """
         # Filter bank statement documents
         bank_statements = [
-            doc for doc in payload.documents_list
+            doc
+            for doc in payload.documents_list
             if doc.get("stipulation_type") == "s_bank_statement"
         ]
 
@@ -69,8 +73,7 @@ class StipulationProcessor(BaseProcessor):
 
         # Track base document IDs for hash
         document_ids = [
-            doc.get("document_id", doc.get("revision_id"))
-            for doc in bank_statements
+            doc.get("document_id", doc.get("revision_id")) for doc in bank_statements
         ]
         self._set_document_ids_hash(document_ids)
 
@@ -210,4 +213,3 @@ class StipulationProcessor(BaseProcessor):
             "f_revenue_monthly_max": max_revenue,
             "f_total_months_analyzed": total_months,
         }
-

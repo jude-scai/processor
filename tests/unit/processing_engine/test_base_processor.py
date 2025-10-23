@@ -119,9 +119,7 @@ class TestBaseProcessorConfiguration:
     def test_get_config_with_multiple_calls(self):
         """Test get_config can be called multiple times."""
         mock_processor_repo = Mock(spec=ProcessorRepository)
-        mock_processor_repo.get_effective_config.return_value = {
-            "minimum_document": 4
-        }
+        mock_processor_repo.get_effective_config.return_value = {"minimum_document": 4}
 
         processor = StipulationProcessor(processor_repo=mock_processor_repo)
         processor._underwriting_processor_id = "uwp_789"
@@ -389,49 +387,60 @@ class TestStipulationProcessor:
 
         assert result.status == ExecutionStatus.FAILED
         assert result.error_phase == "pre-extraction"
-        assert "Insufficient" in result.error_message or "document" in result.error_message
+        assert (
+            "Insufficient" in result.error_message or "document" in result.error_message
+        )
 
     def test_should_execute_logic(self, processor):
         """Test should_execute static method."""
         # Sufficient documents
-        should_exec, reason = processor.should_execute({
-            "documents_list": [
-                {"stipulation_type": "s_bank_statement"},
-                {"stipulation_type": "s_bank_statement"},
-                {"stipulation_type": "s_bank_statement"},
-            ],
-            "config": {"minimum_document": 3},
-        })
+        should_exec, reason = processor.should_execute(
+            {
+                "documents_list": [
+                    {"stipulation_type": "s_bank_statement"},
+                    {"stipulation_type": "s_bank_statement"},
+                    {"stipulation_type": "s_bank_statement"},
+                ],
+                "config": {"minimum_document": 3},
+            }
+        )
         assert should_exec is True
         assert reason is None
 
         # Insufficient documents
-        should_exec, reason = processor.should_execute({
-            "documents_list": [
-                {"stipulation_type": "s_bank_statement"},
-            ],
-            "config": {"minimum_document": 3},
-        })
+        should_exec, reason = processor.should_execute(
+            {
+                "documents_list": [
+                    {"stipulation_type": "s_bank_statement"},
+                ],
+                "config": {"minimum_document": 3},
+            }
+        )
         assert should_exec is False
         assert reason is not None
         assert "minimum" in reason.lower()
 
     def test_consolidation_logic(self, processor):
         """Test consolidation of multiple executions."""
+
         # Create mock execution outputs
         class MockExecution:
             def __init__(self, output):
                 self.output = output
 
         executions = [
-            MockExecution({
-                "monthly_revenues": [45000.0, 46000.0],
-                "months_analyzed": 2,
-            }),
-            MockExecution({
-                "monthly_revenues": [47000.0, 48000.0],
-                "months_analyzed": 2,
-            }),
+            MockExecution(
+                {
+                    "monthly_revenues": [45000.0, 46000.0],
+                    "months_analyzed": 2,
+                }
+            ),
+            MockExecution(
+                {
+                    "monthly_revenues": [47000.0, 48000.0],
+                    "months_analyzed": 2,
+                }
+            ),
         ]
 
         consolidated = processor.consolidate(executions)
@@ -536,6 +545,7 @@ class TestDocumentProcessor:
 
     def test_consolidation_multiple_documents(self, processor):
         """Test consolidation of multiple driver's licenses."""
+
         class MockExecution:
             def __init__(self, output):
                 self.output = output
@@ -557,7 +567,7 @@ class TestDocumentProcessor:
         assert consolidated["f_total_licenses_processed"] == 3
         assert consolidated["f_verified_licenses_count"] == 2
         assert consolidated["f_expired_licenses_count"] == 1
-        assert consolidated["f_verification_rate"] == pytest.approx(2/3)
+        assert consolidated["f_verification_rate"] == pytest.approx(2 / 3)
         assert consolidated["f_all_licenses_valid"] is False
 
 
@@ -711,4 +721,3 @@ class TestProcessingResult:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
-

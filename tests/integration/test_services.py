@@ -1,6 +1,7 @@
 """
 Integration tests for all Docker services (PostgreSQL/BigQuery, GCS, Pub/Sub, Redis)
 """
+
 import os
 import time
 import pytest
@@ -45,7 +46,10 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 
 
-@pytest.mark.skipif(DATABASE_CONNECTION != "postgresql", reason="Requires DATABASE_CONNECTION=postgresql")
+@pytest.mark.skipif(
+    DATABASE_CONNECTION != "postgresql",
+    reason="Requires DATABASE_CONNECTION=postgresql",
+)
 class TestPostgreSQL:
     """Test PostgreSQL database connectivity and schema"""
 
@@ -53,6 +57,7 @@ class TestPostgreSQL:
     def db_connection(self):
         """Create a database connection for testing"""
         import psycopg2
+
         conn = psycopg2.connect(**POSTGRES_CONFIG)
         yield conn
         conn.close()
@@ -72,19 +77,29 @@ class TestPostgreSQL:
         cursor = db_connection.cursor()
 
         tables = [
-            'organization', 'account', 'role', 'permission',
-            'underwriting', 'document', 'document_revision',
-            'organization_processors', 'underwriting_processors', 'processor_executions',
-            'factor', 'factor_snapshot'
+            "organization",
+            "account",
+            "role",
+            "permission",
+            "underwriting",
+            "document",
+            "document_revision",
+            "organization_processors",
+            "underwriting_processors",
+            "processor_executions",
+            "factor",
+            "factor_snapshot",
         ]
 
         for table_name in tables:
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables
                     WHERE table_name = '{table_name}'
                 );
-            """)
+            """
+            )
             exists = cursor.fetchone()[0]
             assert exists, f"Table {table_name} does not exist"
 
@@ -94,6 +109,7 @@ class TestPostgreSQL:
     def test_insert_and_query_underwriting(self, db_connection):
         """Test inserting and querying an underwriting record"""
         from psycopg2.extras import RealDictCursor
+
         cursor = db_connection.cursor(cursor_factory=RealDictCursor)
 
         # Get test organization and account
@@ -110,13 +126,16 @@ class TestPostgreSQL:
         account_id = account["id"]
 
         # Insert test underwriting
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO underwriting (
                 organization_id, serial_number, status, merchant_name,
                 created_by, updated_by
             ) VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id, serial_number, status, merchant_name;
-        """, (org_id, "TEST-001", "created", "Test Merchant", account_id, account_id))
+        """,
+            (org_id, "TEST-001", "created", "Test Merchant", account_id, account_id),
+        )
 
         result = cursor.fetchone()
         assert result is not None
@@ -128,7 +147,9 @@ class TestPostgreSQL:
         cursor.close()
 
 
-@pytest.mark.skipif(DATABASE_CONNECTION != "bigquery", reason="Requires DATABASE_CONNECTION=bigquery")
+@pytest.mark.skipif(
+    DATABASE_CONNECTION != "bigquery", reason="Requires DATABASE_CONNECTION=bigquery"
+)
 class TestBigQuery:
     """Test BigQuery emulator connectivity and basic CRUD via REST port (9050)"""
 
@@ -138,7 +159,7 @@ class TestBigQuery:
         client = bigquery.Client(
             project=BIGQUERY_PROJECT,
             credentials=AnonymousCredentials(),
-            client_options={"api_endpoint": f"http://{BIGQUERY_EMULATOR_HOST}"}
+            client_options={"api_endpoint": f"http://{BIGQUERY_EMULATOR_HOST}"},
         )
         yield client
         client.close()
@@ -146,6 +167,7 @@ class TestBigQuery:
     def test_emulator_running(self):
         """Test BigQuery emulator is running and responding"""
         import requests
+
         response = requests.get("http://localhost:9050", timeout=3)
         # Any response (even error) confirms emulator is running
         assert response.status_code in [404, 500]
@@ -154,10 +176,11 @@ class TestBigQuery:
     def test_rest_api_available(self):
         """Test BigQuery REST API endpoint is available"""
         import requests
+
         # Test a valid endpoint path
         response = requests.get(
             f"http://localhost:9050/bigquery/v2/projects/{BIGQUERY_PROJECT}/datasets",
-            timeout=3
+            timeout=3,
         )
         # Should get some response (200 or error)
         assert response.status_code in [200, 404, 500]
@@ -170,7 +193,7 @@ class TestBigQuery:
         client = bigquery.Client(
             project=BIGQUERY_PROJECT,
             credentials=AnonymousCredentials(),
-            client_options={"api_endpoint": f"http://{BIGQUERY_EMULATOR_HOST}"}
+            client_options={"api_endpoint": f"http://{BIGQUERY_EMULATOR_HOST}"},
         )
 
         assert client is not None
@@ -182,6 +205,7 @@ class TestBigQuery:
     def test_create_dataset_via_client(self, bq_client):
         """Create a temporary dataset and verify it succeeds (timeout 10s)"""
         import uuid
+
         unique_suffix = uuid.uuid4().hex[:8]
         dataset_id = f"{BIGQUERY_PROJECT}.{BIGQUERY_DATASET}_ds_{unique_suffix}"
         dataset = bigquery.Dataset(dataset_id)
@@ -194,12 +218,18 @@ class TestBigQuery:
     def test_create_table_via_client(self, bq_client):
         """Create a small table in the temp dataset (timeout 10s)"""
         import requests
+
         dataset_id = f"{BIGQUERY_PROJECT}.{BIGQUERY_DATASET}_itest"
         # ensure dataset exists via REST to avoid emulator 500 retry loop
         requests.post(
             f"http://localhost:9050/bigquery/v2/projects/{BIGQUERY_PROJECT}/datasets",
-            json={"datasetReference": {"datasetId": f"{BIGQUERY_DATASET}_itest", "projectId": BIGQUERY_PROJECT}},
-            timeout=3
+            json={
+                "datasetReference": {
+                    "datasetId": f"{BIGQUERY_DATASET}_itest",
+                    "projectId": BIGQUERY_PROJECT,
+                }
+            },
+            timeout=3,
         )
 
         table_id = f"{dataset_id}.itest_simple"
@@ -218,13 +248,19 @@ class TestBigQuery:
         """Insert a row and query it back (timeout 15s)"""
         import requests
         import uuid
+
         dataset = f"{BIGQUERY_PROJECT}.{BIGQUERY_DATASET}_itest"
         table_id = f"{dataset}.itest_simple"
         # ensure dataset exists via REST
         requests.post(
             f"http://localhost:9050/bigquery/v2/projects/{BIGQUERY_PROJECT}/datasets",
-            json={"datasetReference": {"datasetId": f"{BIGQUERY_DATASET}_itest", "projectId": BIGQUERY_PROJECT}},
-            timeout=3
+            json={
+                "datasetReference": {
+                    "datasetId": f"{BIGQUERY_DATASET}_itest",
+                    "projectId": BIGQUERY_PROJECT,
+                }
+            },
+            timeout=3,
         )
         # ensure table exists
         schema = [
@@ -235,10 +271,16 @@ class TestBigQuery:
         bq_client.create_table(bigquery.Table(table_id, schema=schema), exists_ok=True)
 
         unique_id = f"it_{uuid.uuid4().hex[:8]}"
-        errors = bq_client.insert_rows_json(table_id, [{"id": unique_id, "name": "Alpha", "value": 7}])
+        errors = bq_client.insert_rows_json(
+            table_id, [{"id": unique_id, "name": "Alpha", "value": 7}]
+        )
         assert errors == []
 
-        rows = list(bq_client.query(f"SELECT id,name,value FROM `{table_id}` WHERE id='{unique_id}'").result())
+        rows = list(
+            bq_client.query(
+                f"SELECT id,name,value FROM `{table_id}` WHERE id='{unique_id}'"
+            ).result()
+        )
         assert len(rows) == 1 and rows[0]["name"] == "Alpha"
         print("✅ Insert/Query succeeded via client")
 
@@ -252,8 +294,7 @@ class TestGCS:
         os.environ["STORAGE_EMULATOR_HOST"] = GCS_EMULATOR_HOST
 
         client = storage.Client(
-            project=BIGQUERY_PROJECT,
-            client_options={"api_endpoint": GCS_EMULATOR_HOST}
+            project=BIGQUERY_PROJECT, client_options={"api_endpoint": GCS_EMULATOR_HOST}
         )
         yield client
 
@@ -394,7 +435,7 @@ class TestPubSub:
             # Pull message
             response = pubsub_subscriber.pull(
                 request={"subscription": subscription_path, "max_messages": 1},
-                timeout=5.0
+                timeout=5.0,
             )
 
             if response.received_messages:
@@ -405,7 +446,7 @@ class TestPubSub:
                 pubsub_subscriber.acknowledge(
                     request={
                         "subscription": subscription_path,
-                        "ack_ids": [message.ack_id]
+                        "ack_ids": [message.ack_id],
                     }
                 )
         except Exception as e:
@@ -419,10 +460,7 @@ class TestRedis:
     def redis_client(self):
         """Create Redis client for testing"""
         client = redis.Redis(
-            host=REDIS_HOST,
-            port=REDIS_PORT,
-            db=REDIS_DB,
-            decode_responses=True
+            host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB, decode_responses=True
         )
         yield client
         client.close()
@@ -452,7 +490,7 @@ class TestRedis:
         factors = {
             "avg_revenue": "50000.00",
             "time_in_business": "36",
-            "credit_score": "720"
+            "credit_score": "720",
         }
 
         # Set hash
@@ -507,4 +545,3 @@ class TestRedis:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
-

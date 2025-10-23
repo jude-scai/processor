@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 # Load environment variables
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # Database imports
@@ -200,105 +201,94 @@ class DataSeeder:
         print(f"   ✓ Created {len(accounts)} user accounts")
 
     def seed_purchased_processors(self):
-        """Create purchased processor subscriptions."""
+        """Create purchased processor subscriptions - 3 test processors per organization."""
         print("\n🔧 Creating purchased processors...")
 
-        org = self.data["organizations"][0]
-        purchaser = self.data["accounts"][0]
+        processors = []
 
-        processors = [
-            {
-                "id": self.generate_uuid(),
-                "organization_id": org["id"],
-                "processor": "p_bank_statement_analyzer",
-                "name": "Bank Statement Analyzer",
-                "auto": True,
-                "status": "active",
-                "config": {
-                    "minimum_document": 3,
-                    "analysis_window_months": 6,
-                    "nsf_threshold_amount": 35.00,
-                },
-                "price_amount": 500,  # $5.00 in cents
-                "price_unit": "execution",
-                "price_currency": "USD",
-                "purchased_at": self.generate_timestamp(60),
-                "purchased_by": purchaser["id"],
-            },
-            {
-                "id": self.generate_uuid(),
-                "organization_id": org["id"],
-                "processor": "p_credit_check_experian",
-                "name": "Experian Business Credit Check",
-                "auto": True,
-                "status": "active",
-                "config": {
-                    "include_trade_lines": True,
-                    "include_public_records": True,
-                    "credit_score_threshold": 600,
-                },
-                "price_amount": 1500,  # $15.00 in cents
-                "price_unit": "execution",
-                "price_currency": "USD",
-                "purchased_at": self.generate_timestamp(60),
-                "purchased_by": purchaser["id"],
-            },
-            {
-                "id": self.generate_uuid(),
-                "organization_id": org["id"],
-                "processor": "p_identity_verification",
-                "name": "Driver's License Verification",
-                "auto": True,
-                "status": "active",
-                "config": {
-                    "require_photo": True,
-                    "check_expiration": True,
-                    "min_age": 18,
-                },
-                "price_amount": 300,  # $3.00 in cents
-                "price_unit": "document",
-                "price_currency": "USD",
-                "purchased_at": self.generate_timestamp(60),
-                "purchased_by": purchaser["id"],
-            },
-            {
-                "id": self.generate_uuid(),
-                "organization_id": org["id"],
-                "processor": "p_business_verification",
-                "name": "Business Registration Verification",
-                "auto": True,
-                "status": "active",
-                "config": {
-                    "verify_ein": True,
-                    "check_state_registry": True,
-                },
-                "price_amount": 800,  # $8.00 in cents
-                "price_unit": "execution",
-                "price_currency": "USD",
-                "purchased_at": self.generate_timestamp(60),
-                "purchased_by": purchaser["id"],
-            },
-            {
-                "id": self.generate_uuid(),
-                "organization_id": org["id"],
-                "processor": "p_clear_report",
-                "name": "Thomson Reuters CLEAR Report",
-                "auto": False,  # Manual only
-                "status": "active",
-                "config": {
-                    "include_background_check": True,
-                    "include_business_search": True,
-                },
-                "price_amount": 2500,  # $25.00 in cents
-                "price_unit": "execution",
-                "price_currency": "USD",
-                "purchased_at": self.generate_timestamp(60),
-                "purchased_by": purchaser["id"],
-            },
-        ]
+        # Create 3 test processors for each organization
+        for org in self.data["organizations"]:
+            purchaser = self.data["accounts"][0]  # Use first account as purchaser
+
+            # Test Application Processor
+            processors.append(
+                {
+                    "id": self.generate_uuid(),
+                    "organization_id": org["id"],
+                    "processor": "test_application_processor",
+                    "name": "Test Application Processor",
+                    "auto": True,
+                    "status": "active",
+                    "config": {
+                        "processor_type": "APPLICATION",
+                        "test_mode": True,
+                        "debug_output": True,
+                        "mock_delay_ms": 1000,
+                    },
+                    "price_amount": 100,  # $1.00 in cents
+                    "price_unit": "execution",
+                    "price_currency": "USD",
+                    "purchased_at": self.generate_timestamp(60),
+                    "purchased_by": purchaser["id"],
+                }
+            )
+
+            # Test Stipulation Processor
+            processors.append(
+                {
+                    "id": self.generate_uuid(),
+                    "organization_id": org["id"],
+                    "processor": "test_stipulation_processor",
+                    "name": "Test Stipulation Processor",
+                    "auto": True,
+                    "status": "active",
+                    "config": {
+                        "processor_type": "STIPULATION",
+                        "test_mode": True,
+                        "debug_output": True,
+                        "mock_delay_ms": 1500,
+                        "stipulation_types": ["s_bank_statement", "s_drivers_license"],
+                    },
+                    "price_amount": 200,  # $2.00 in cents
+                    "price_unit": "execution",
+                    "price_currency": "USD",
+                    "purchased_at": self.generate_timestamp(60),
+                    "purchased_by": purchaser["id"],
+                }
+            )
+
+            # Test Document Processor
+            processors.append(
+                {
+                    "id": self.generate_uuid(),
+                    "organization_id": org["id"],
+                    "processor": "test_document_processor",
+                    "name": "Test Document Processor",
+                    "auto": True,
+                    "status": "active",
+                    "config": {
+                        "processor_type": "DOCUMENT",
+                        "test_mode": True,
+                        "debug_output": True,
+                        "mock_delay_ms": 2000,
+                        "document_types": [
+                            "application/pdf",
+                            "image/png",
+                            "image/jpeg",
+                        ],
+                    },
+                    "price_amount": 300,  # $3.00 in cents
+                    "price_unit": "document",
+                    "price_currency": "USD",
+                    "purchased_at": self.generate_timestamp(60),
+                    "purchased_by": purchaser["id"],
+                }
+            )
 
         self.data["purchased_processors"] = processors
-        print(f"   ✓ Created {len(processors)} purchased processors")
+        print(
+            f"   ✓ Created {len(processors)} purchased processors (3 per organization)"
+        )
 
     def seed_underwritings(self):
         """Create mock underwriting cases."""
@@ -339,7 +329,9 @@ class DataSeeder:
                 "merchant_industry": "5734",  # Computer software stores
                 "merchant_ein": "12-3456789",
                 "merchant_entity_type": "Corporation",
-                "merchant_incorporation_date": (datetime.now(timezone.utc) - timedelta(days=1095)).date(),
+                "merchant_incorporation_date": (
+                    datetime.now(timezone.utc) - timedelta(days=1095)
+                ).date(),
                 "merchant_state_of_incorporation": "CA",
                 "created_at": self.generate_timestamp(7),
                 "updated_at": self.generate_timestamp(1),
@@ -376,7 +368,9 @@ class DataSeeder:
                 "merchant_industry": "5311",  # Department stores
                 "merchant_ein": "98-7654321",
                 "merchant_entity_type": "LLC",
-                "merchant_incorporation_date": (datetime.now(timezone.utc) - timedelta(days=1825)).date(),
+                "merchant_incorporation_date": (
+                    datetime.now(timezone.utc) - timedelta(days=1825)
+                ).date(),
                 "merchant_state_of_incorporation": "NY",
                 "created_at": self.generate_timestamp(14),
                 "updated_at": self.generate_timestamp(2),
@@ -413,7 +407,9 @@ class DataSeeder:
                 "merchant_industry": "5812",  # Eating places, restaurants
                 "merchant_ein": "45-6789012",
                 "merchant_entity_type": "Corporation",
-                "merchant_incorporation_date": (datetime.now(timezone.utc) - timedelta(days=2555)).date(),
+                "merchant_incorporation_date": (
+                    datetime.now(timezone.utc) - timedelta(days=2555)
+                ).date(),
                 "merchant_state_of_incorporation": "TX",
                 "created_at": self.generate_timestamp(2),
                 "updated_at": self.generate_timestamp(1),
@@ -442,7 +438,9 @@ class DataSeeder:
                     "email": "robert@techstartup.com",
                     "phone_mobile": "555-0101",
                     "phone_work": "555-0102",
-                    "birthday": (datetime.now(timezone.utc) - timedelta(days=15330)).date(),  # ~42 years old
+                    "birthday": (
+                        datetime.now(timezone.utc) - timedelta(days=15330)
+                    ).date(),  # ~42 years old
                     "fico_score": 720,
                     "ssn": "123-45-6789",
                     "ownership_percent": 60.0,
@@ -453,7 +451,9 @@ class DataSeeder:
                     "last_name": "Chen",
                     "email": "jennifer@techstartup.com",
                     "phone_mobile": "555-0104",
-                    "birthday": (datetime.now(timezone.utc) - timedelta(days=13140)).date(),  # ~36 years old
+                    "birthday": (
+                        datetime.now(timezone.utc) - timedelta(days=13140)
+                    ).date(),  # ~36 years old
                     "fico_score": 695,
                     "ssn": "234-56-7890",
                     "ownership_percent": 40.0,
@@ -469,7 +469,9 @@ class DataSeeder:
                     "phone_mobile": "555-0201",
                     "phone_work": "555-0202",
                     "phone_home": "555-0203",
-                    "birthday": (datetime.now(timezone.utc) - timedelta(days=18250)).date(),  # ~50 years old
+                    "birthday": (
+                        datetime.now(timezone.utc) - timedelta(days=18250)
+                    ).date(),  # ~50 years old
                     "fico_score": 740,
                     "ssn": "345-67-8901",
                     "ownership_percent": 100.0,
@@ -484,7 +486,9 @@ class DataSeeder:
                     "email": "david@restaurant.com",
                     "phone_mobile": "555-0301",
                     "phone_work": "555-0302",
-                    "birthday": (datetime.now(timezone.utc) - timedelta(days=16425)).date(),  # ~45 years old
+                    "birthday": (
+                        datetime.now(timezone.utc) - timedelta(days=16425)
+                    ).date(),  # ~45 years old
                     "fico_score": 710,
                     "ssn": "456-78-9012",
                     "ownership_percent": 55.0,
@@ -495,7 +499,9 @@ class DataSeeder:
                     "last_name": "Park",
                     "email": "susan@restaurant.com",
                     "phone_mobile": "555-0304",
-                    "birthday": (datetime.now(timezone.utc) - timedelta(days=14235)).date(),  # ~39 years old
+                    "birthday": (
+                        datetime.now(timezone.utc) - timedelta(days=14235)
+                    ).date(),  # ~39 years old
                     "fico_score": 685,
                     "ssn": "567-89-0123",
                     "ownership_percent": 45.0,
@@ -627,7 +633,9 @@ class DataSeeder:
 
         owner_idx = 0
         for uw_idx, uw in enumerate(self.data["underwritings"]):
-            uw_owners = [o for o in self.data["owners"] if o["underwriting_id"] == uw["id"]]
+            uw_owners = [
+                o for o in self.data["owners"] if o["underwriting_id"] == uw["id"]
+            ]
             for addr_idx, owner in enumerate(uw_owners):
                 addr_data = owner_addrs[uw_idx][addr_idx]
                 addr = {
@@ -647,23 +655,32 @@ class DataSeeder:
 
         self.data["merchant_addresses"] = merchant_addresses
         self.data["owner_addresses"] = owner_addresses
-        print(f"   ✓ Created {len(merchant_addresses)} merchant addresses and {len(owner_addresses)} owner addresses")
+        print(
+            f"   ✓ Created {len(merchant_addresses)} merchant addresses and {len(owner_addresses)} owner addresses"
+        )
 
     def seed_underwriting_processors(self):
-        """Create underwriting processor configurations."""
+        """Create underwriting processor configurations - enable all 3 test processors per underwriting."""
         print("\n⚙️  Creating underwriting processor configurations...")
 
         creator = self.data["accounts"][1]
         configs = []
 
-        # For each underwriting, enable purchased processors
+        # For each underwriting, enable all 3 test processors for that organization
         for uw in self.data["underwritings"]:
-            for pp in self.data["purchased_processors"][:4]:  # Enable first 4 processors
+            # Get the 3 test processors for this underwriting's organization
+            org_processors = [
+                pp
+                for pp in self.data["purchased_processors"]
+                if pp["organization_id"] == uw["organization_id"]
+            ]
+
+            for pp in org_processors:  # Enable all 3 test processors
                 config = {
                     "id": self.generate_uuid(),
                     "organization_id": uw["organization_id"],
                     "underwriting_id": uw["id"],
-                    "purchased_processor_id": pp["id"],
+                    "organization_processor_id": pp["id"],  # Correct column name
                     "processor": pp["processor"],
                     "name": pp["name"],
                     "auto": pp["auto"],
@@ -679,7 +696,9 @@ class DataSeeder:
                 configs.append(config)
 
         self.data["underwriting_processors"] = configs
-        print(f"   ✓ Created {len(configs)} underwriting processor configs")
+        print(
+            f"   ✓ Created {len(configs)} underwriting processor configs (3 per underwriting)"
+        )
 
     def seed_documents(self):
         """Create mock documents with revisions."""
@@ -739,7 +758,9 @@ class DataSeeder:
 
         self.data["documents"] = documents
         self.data["document_revisions"] = revisions
-        print(f"   ✓ Created {len(documents)} documents with {len(revisions)} revisions")
+        print(
+            f"   ✓ Created {len(documents)} documents with {len(revisions)} revisions"
+        )
 
     def seed_processor_executions(self):
         """Create mock processor executions."""
@@ -749,8 +770,11 @@ class DataSeeder:
 
         # Create executions for first underwriting
         uw = self.data["underwritings"][0]
-        uw_processors = [up for up in self.data["underwriting_processors"]
-                        if up["underwriting_id"] == uw["id"]]
+        uw_processors = [
+            up
+            for up in self.data["underwriting_processors"]
+            if up["underwriting_id"] == uw["id"]
+        ]
 
         for up in uw_processors[:2]:  # First 2 processors
             exec_id = self.generate_uuid()
@@ -803,8 +827,11 @@ class DataSeeder:
 
         # Create factors for first underwriting
         uw = self.data["underwritings"][0]
-        executions = [e for e in self.data["processor_executions"]
-                     if e["underwriting_id"] == uw["id"]]
+        executions = [
+            e
+            for e in self.data["processor_executions"]
+            if e["underwriting_id"] == uw["id"]
+        ]
 
         for execution in executions:
             for factor_key, value in execution["factors_delta"].items():
@@ -831,17 +858,17 @@ class DataSeeder:
 
     def print_summary(self):
         """Print summary of generated data."""
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("📊 SEED DATA SUMMARY")
-        print("="*70)
+        print("=" * 70)
 
         for key, items in self.data.items():
             if items:
                 print(f"{key.replace('_', ' ').title()}: {len(items)}")
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("\n📝 SAMPLE DATA:")
-        print("="*70)
+        print("=" * 70)
 
         if self.data["organizations"]:
             org = self.data["organizations"][0]
@@ -856,20 +883,26 @@ class DataSeeder:
         if self.data["purchased_processors"]:
             print(f"\n🔧 Purchased Processors:")
             for pp in self.data["purchased_processors"][:3]:
-                print(f"   • {pp['name']} (${pp['price_amount']/100:.2f} per {pp['price_unit']})")
+                print(
+                    f"   • {pp['name']} (${pp['price_amount']/100:.2f} per {pp['price_unit']})"
+                )
 
         if self.data["underwritings"]:
             print(f"\n📋 Underwritings:")
             for uw in self.data["underwritings"]:
-                print(f"   • {uw['serial_number']} - {uw['merchant_name']} (${uw['request_amount']:,.2f}) [{uw['status']}]")
+                print(
+                    f"   • {uw['serial_number']} - {uw['merchant_name']} (${uw['request_amount']:,.2f}) [{uw['status']}]"
+                )
 
         if self.data["owners"]:
             print(f"\n👨‍💼 Beneficial Owners:")
             for owner in self.data["owners"][:5]:
                 primary = "PRIMARY" if owner["primary_owner"] else "CO-OWNER"
-                print(f"   • {owner['first_name']} {owner['last_name']} - {owner['ownership_percent']}% ({primary}) FICO: {owner['fico_score']}")
+                print(
+                    f"   • {owner['first_name']} {owner['last_name']} - {owner['ownership_percent']}% ({primary}) FICO: {owner['fico_score']}"
+                )
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
 
     def export_sql(self, database_type="postgresql"):
         """Export data as SQL INSERT statements."""
@@ -899,15 +932,21 @@ class DataSeeder:
             # (Simplified - actual implementation would generate proper SQL)
             f.write("-- Insert Organizations\n")
             for org in self.data["organizations"]:
-                f.write(f"-- INSERT INTO organizations VALUES ({org['id']}, '{org['name']}', ...);\n")
+                f.write(
+                    f"-- INSERT INTO organizations VALUES ({org['id']}, '{org['name']}', ...);\n"
+                )
 
             f.write("\n-- Insert Roles\n")
             for role in self.data["roles"]:
-                f.write(f"-- INSERT INTO roles VALUES ({role['id']}, '{role['name']}', ...);\n")
+                f.write(
+                    f"-- INSERT INTO roles VALUES ({role['id']}, '{role['name']}', ...);\n"
+                )
 
             f.write("\n-- Insert Accounts\n")
             for acc in self.data["accounts"]:
-                f.write(f"-- INSERT INTO accounts VALUES ({acc['id']}, '{acc['email']}', ...);\n")
+                f.write(
+                    f"-- INSERT INTO accounts VALUES ({acc['id']}, '{acc['email']}', ...);\n"
+                )
 
             f.write("\n-- More INSERT statements would follow...\n")
 
@@ -958,10 +997,19 @@ class DataSeeder:
             if self.clear_existing:
                 print("   🗑️  Clearing existing data...")
                 tables = [
-                    "factor", "processor_executions", "document_revision", "document",
-                    "underwriting_processors", "organization_processors",
-                    "owner_address", "owner", "merchant_address", "underwriting",
-                    "account", "role", "organization"
+                    "factor",
+                    "processor_executions",
+                    "document_revision",
+                    "document",
+                    "underwriting_processors",
+                    "organization_processors",
+                    "owner_address",
+                    "owner",
+                    "merchant_address",
+                    "underwriting",
+                    "account",
+                    "role",
+                    "organization",
                 ]
                 for table in tables:
                     cursor.execute(f"TRUNCATE TABLE {table} CASCADE;")
@@ -970,39 +1018,68 @@ class DataSeeder:
             # Insert organizations
             print("   📊 Inserting organizations...")
             for org in self.data["organizations"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO organization (id, name, status, created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (org["id"], org["name"], org["status"], org["created_at"], org["updated_at"]))
+                """,
+                    (
+                        org["id"],
+                        org["name"],
+                        org["status"],
+                        org["created_at"],
+                        org["updated_at"],
+                    ),
+                )
 
             # Insert roles
             print("   👤 Inserting roles...")
             for role in self.data["roles"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO role (id, name, description, created_at, updated_at)
                     VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (role["id"], role["name"], role["description"],
-                      role["created_at"], role["updated_at"]))
+                """,
+                    (
+                        role["id"],
+                        role["name"],
+                        role["description"],
+                        role["created_at"],
+                        role["updated_at"],
+                    ),
+                )
 
             # Insert accounts
             print("   👥 Inserting accounts...")
             for acc in self.data["accounts"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO account (
                         id, organization_id, firebase_uid, email, first_name, last_name,
                         status, created_at, updated_at
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (acc["id"], acc["organization_id"], acc["firebase_uid"], acc["email"],
-                      acc["first_name"], acc["last_name"], acc["status"],
-                      acc["created_at"], acc["updated_at"]))
+                """,
+                    (
+                        acc["id"],
+                        acc["organization_id"],
+                        acc["firebase_uid"],
+                        acc["email"],
+                        acc["first_name"],
+                        acc["last_name"],
+                        acc["status"],
+                        acc["created_at"],
+                        acc["updated_at"],
+                    ),
+                )
 
             # Insert underwritings
             print("   📋 Inserting underwritings...")
             for uw in self.data["underwritings"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO underwriting (
                         id, organization_id, serial_number, status, application_type,
                         request_amount, request_date, purpose,
@@ -1018,22 +1095,49 @@ class DataSeeder:
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    uw["id"], uw["organization_id"], uw["serial_number"], uw["status"],
-                    uw["application_type"], uw["request_amount"], uw["request_date"], uw["purpose"],
-                    uw["iso_ref_id"], uw["iso_name"], uw["iso_email"], uw["iso_phone"],
-                    uw["representative_ref_id"], uw["representative_first_name"], uw["representative_last_name"],
-                    uw["representative_email"], uw["representative_phone_mobile"], uw.get("representative_phone_work"),
-                    uw["merchant_ref_id"], uw["merchant_name"], uw["merchant_dba_name"], uw["merchant_email"],
-                    uw["merchant_phone"], uw["merchant_website"], uw["merchant_industry"], uw["merchant_ein"],
-                    uw["merchant_entity_type"], uw["merchant_incorporation_date"], uw["merchant_state_of_incorporation"],
-                    uw["created_at"], uw["updated_at"], uw["created_by"], uw["updated_by"]
-                ))
+                """,
+                    (
+                        uw["id"],
+                        uw["organization_id"],
+                        uw["serial_number"],
+                        uw["status"],
+                        uw["application_type"],
+                        uw["request_amount"],
+                        uw["request_date"],
+                        uw["purpose"],
+                        uw["iso_ref_id"],
+                        uw["iso_name"],
+                        uw["iso_email"],
+                        uw["iso_phone"],
+                        uw["representative_ref_id"],
+                        uw["representative_first_name"],
+                        uw["representative_last_name"],
+                        uw["representative_email"],
+                        uw["representative_phone_mobile"],
+                        uw.get("representative_phone_work"),
+                        uw["merchant_ref_id"],
+                        uw["merchant_name"],
+                        uw["merchant_dba_name"],
+                        uw["merchant_email"],
+                        uw["merchant_phone"],
+                        uw["merchant_website"],
+                        uw["merchant_industry"],
+                        uw["merchant_ein"],
+                        uw["merchant_entity_type"],
+                        uw["merchant_incorporation_date"],
+                        uw["merchant_state_of_incorporation"],
+                        uw["created_at"],
+                        uw["updated_at"],
+                        uw["created_by"],
+                        uw["updated_by"],
+                    ),
+                )
 
             # Insert owners
             print("   👨‍💼 Inserting owners...")
             for owner in self.data["owners"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO owner (
                         id, underwriting_id, first_name, last_name, email,
                         phone_mobile, phone_work, phone_home, birthday, fico_score, ssn,
@@ -1043,118 +1147,208 @@ class DataSeeder:
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    owner["id"], owner["underwriting_id"], owner["first_name"], owner["last_name"],
-                    owner["email"], owner["phone_mobile"], owner.get("phone_work"), owner.get("phone_home"),
-                    owner["birthday"], owner["fico_score"], owner["ssn"], owner["enabled"],
-                    owner["ownership_percent"], owner["primary_owner"],
-                    owner["created_at"], owner["updated_at"], owner["created_by"], owner["updated_by"]
-                ))
+                """,
+                    (
+                        owner["id"],
+                        owner["underwriting_id"],
+                        owner["first_name"],
+                        owner["last_name"],
+                        owner["email"],
+                        owner["phone_mobile"],
+                        owner.get("phone_work"),
+                        owner.get("phone_home"),
+                        owner["birthday"],
+                        owner["fico_score"],
+                        owner["ssn"],
+                        owner["enabled"],
+                        owner["ownership_percent"],
+                        owner["primary_owner"],
+                        owner["created_at"],
+                        owner["updated_at"],
+                        owner["created_by"],
+                        owner["updated_by"],
+                    ),
+                )
 
             # Insert owner addresses
             print("   🏠 Inserting owner addresses...")
             for addr in self.data["owner_addresses"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO owner_address (
                         id, owner_id, addr_1, addr_2, city, state, zip,
                         created_at, updated_at, created_by, updated_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    addr["id"], addr["owner_id"], addr["addr_1"], addr["addr_2"],
-                    addr["city"], addr["state"], addr["zip"],
-                    addr["created_at"], addr["updated_at"], addr["created_by"], addr["updated_by"]
-                ))
+                """,
+                    (
+                        addr["id"],
+                        addr["owner_id"],
+                        addr["addr_1"],
+                        addr["addr_2"],
+                        addr["city"],
+                        addr["state"],
+                        addr["zip"],
+                        addr["created_at"],
+                        addr["updated_at"],
+                        addr["created_by"],
+                        addr["updated_by"],
+                    ),
+                )
 
             # Insert merchant addresses
             print("   🏢 Inserting merchant addresses...")
             for addr in self.data["merchant_addresses"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO merchant_address (
                         id, underwriting_id, addr_1, addr_2, city, state, zip,
                         created_at, updated_at, created_by, updated_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    addr["id"], addr["underwriting_id"], addr["addr_1"], addr["addr_2"],
-                    addr["city"], addr["state"], addr["zip"],
-                    addr["created_at"], addr["updated_at"], addr["created_by"], addr["updated_by"]
-                ))
+                """,
+                    (
+                        addr["id"],
+                        addr["underwriting_id"],
+                        addr["addr_1"],
+                        addr["addr_2"],
+                        addr["city"],
+                        addr["state"],
+                        addr["zip"],
+                        addr["created_at"],
+                        addr["updated_at"],
+                        addr["created_by"],
+                        addr["updated_by"],
+                    ),
+                )
 
             # Insert purchased processors
             print("   🔧 Inserting purchased processors...")
             for pp in self.data["purchased_processors"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO organization_processors (
                         id, organization_id, processor, name, auto, status, config,
                         price_amount, price_unit, price_currency,
                         purchased_at, purchased_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    pp["id"], pp["organization_id"], pp["processor"], pp["name"],
-                    pp["auto"], pp["status"], Json(pp["config"]),
-                    pp["price_amount"], pp["price_unit"], pp["price_currency"],
-                    pp["purchased_at"], pp["purchased_by"]
-                ))
+                """,
+                    (
+                        pp["id"],
+                        pp["organization_id"],
+                        pp["processor"],
+                        pp["name"],
+                        pp["auto"],
+                        pp["status"],
+                        Json(pp["config"]),
+                        pp["price_amount"],
+                        pp["price_unit"],
+                        pp["price_currency"],
+                        pp["purchased_at"],
+                        pp["purchased_by"],
+                    ),
+                )
 
             # Insert underwriting processors
             print("   ⚙️  Inserting underwriting processors...")
             for up in self.data["underwriting_processors"]:
                 # Cast current_executions_list to UUID array
-                exec_list = up["current_executions_list"] if up["current_executions_list"] else []
-                cursor.execute("""
+                exec_list = (
+                    up["current_executions_list"]
+                    if up["current_executions_list"]
+                    else []
+                )
+                cursor.execute(
+                    """
                     INSERT INTO underwriting_processors (
                         id, organization_id, underwriting_id, organization_processor_id,
                         processor, name, auto, enabled, config_override, effective_config,
                         current_executions_list, created_at, created_by, updated_at, updated_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::uuid[], %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    up["id"], up["organization_id"], up["underwriting_id"], up.get("purchased_processor_id"),
-                    up["processor"], up["name"], up["auto"], up["enabled"],
-                    Json(up["config_override"]), Json(up["effective_config"]),
-                    exec_list, up["created_at"], up["created_by"],
-                    up["updated_at"], up["updated_by"]
-                ))
+                """,
+                    (
+                        up["id"],
+                        up["organization_id"],
+                        up["underwriting_id"],
+                        up.get("purchased_processor_id"),
+                        up["processor"],
+                        up["name"],
+                        up["auto"],
+                        up["enabled"],
+                        Json(up["config_override"]),
+                        Json(up["effective_config"]),
+                        exec_list,
+                        up["created_at"],
+                        up["created_by"],
+                        up["updated_at"],
+                        up["updated_by"],
+                    ),
+                )
 
             # Insert documents
             print("   📄 Inserting documents...")
             for doc in self.data["documents"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO document (
                         id, organization_id, underwriting_id, status, current_revision_id,
                         stipulation_type, classification_confidence,
                         created_at, created_by, updated_at, updated_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    doc["id"], doc["organization_id"], doc["underwriting_id"], doc["status"],
-                    doc["current_revision_id"], doc["stipulation_type"], doc["classification_confidence"],
-                    doc["created_at"], doc["created_by"], doc["updated_at"], doc["updated_by"]
-                ))
+                """,
+                    (
+                        doc["id"],
+                        doc["organization_id"],
+                        doc["underwriting_id"],
+                        doc["status"],
+                        doc["current_revision_id"],
+                        doc["stipulation_type"],
+                        doc["classification_confidence"],
+                        doc["created_at"],
+                        doc["created_by"],
+                        doc["updated_at"],
+                        doc["updated_by"],
+                    ),
+                )
 
             # Insert document revisions
             print("   📑 Inserting document revisions...")
             for rev in self.data["document_revisions"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO document_revision (
                         id, document_id, revision, gcs_uri, ocr_gcs_uri, filename, mime_type,
                         size_bytes, quality_score, page_count,
                         created_at, created_by, updated_at, updated_by
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    rev["id"], rev["document_id"], rev["revision"], rev["gcs_uri"], rev["ocr_gcs_uri"],
-                    rev["filename"], rev["mime_type"], rev["size_bytes"],
-                    rev["quality_score"], rev["page_count"],
-                    rev["created_at"], rev["created_by"], rev["updated_at"], rev["updated_by"]
-                ))
+                """,
+                    (
+                        rev["id"],
+                        rev["document_id"],
+                        rev["revision"],
+                        rev["gcs_uri"],
+                        rev["ocr_gcs_uri"],
+                        rev["filename"],
+                        rev["mime_type"],
+                        rev["size_bytes"],
+                        rev["quality_score"],
+                        rev["page_count"],
+                        rev["created_at"],
+                        rev["created_by"],
+                        rev["updated_at"],
+                        rev["updated_by"],
+                    ),
+                )
 
             # Insert processor executions
             print("   🔄 Inserting processor executions...")
             for exe in self.data["processor_executions"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO processor_executions (
                         id, organization_id, underwriting_id, underwriting_processor_id,
                         processor, status, enabled, payload, payload_hash, factors_delta,
@@ -1164,31 +1358,54 @@ class DataSeeder:
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    exe["id"], exe["organization_id"], exe["underwriting_id"],
-                    exe["underwriting_processor_id"], exe["processor"], exe["status"],
-                    exe["enabled"], Json(exe["payload"]), exe["payload_hash"],
-                    Json(exe["factors_delta"]),
-                    exe["run_cost_cents"], exe["currency"], exe["started_at"], exe["completed_at"],
-                    exe["created_at"], exe["updated_at"]
-                ))
+                """,
+                    (
+                        exe["id"],
+                        exe["organization_id"],
+                        exe["underwriting_id"],
+                        exe["underwriting_processor_id"],
+                        exe["processor"],
+                        exe["status"],
+                        exe["enabled"],
+                        Json(exe["payload"]),
+                        exe["payload_hash"],
+                        Json(exe["factors_delta"]),
+                        exe["run_cost_cents"],
+                        exe["currency"],
+                        exe["started_at"],
+                        exe["completed_at"],
+                        exe["created_at"],
+                        exe["updated_at"],
+                    ),
+                )
 
             # Insert factors
             print("   📊 Inserting factors...")
             for factor in self.data["factors"]:
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO factor (
                         id, organization_id, underwriting_id, factor_key, value, unit,
                         source, status, underwriting_processor_id, execution_id,
                         created_at, updated_at
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (id) DO NOTHING
-                """, (
-                    factor["id"], factor["organization_id"], factor["underwriting_id"],
-                    factor["factor_key"], Json(factor["value"]), factor["unit"],
-                    factor["source"], factor["status"], factor["underwriting_processor_id"],
-                    factor["execution_id"], factor["created_at"], factor["updated_at"]
-                ))
+                """,
+                    (
+                        factor["id"],
+                        factor["organization_id"],
+                        factor["underwriting_id"],
+                        factor["factor_key"],
+                        Json(factor["value"]),
+                        factor["unit"],
+                        factor["source"],
+                        factor["status"],
+                        factor["underwriting_processor_id"],
+                        factor["execution_id"],
+                        factor["created_at"],
+                        factor["updated_at"],
+                    ),
+                )
 
             # Commit transaction
             self.db_conn.commit()
@@ -1211,22 +1428,20 @@ def main():
         "--database",
         choices=["postgresql", "bigquery"],
         default="postgresql",
-        help="Database type to generate SQL for"
+        help="Database type to generate SQL for",
     )
     parser.add_argument(
-        "--clear",
-        action="store_true",
-        help="Clear existing data before seeding"
+        "--clear", action="store_true", help="Clear existing data before seeding"
     )
     parser.add_argument(
         "--export-sql",
         action="store_true",
-        help="Export as SQL file instead of direct insertion"
+        help="Export as SQL file instead of direct insertion",
     )
     parser.add_argument(
         "--export-json",
         action="store_true",
-        help="Export as JSON file for easy data access"
+        help="Export as JSON file for easy data access",
     )
 
     args = parser.parse_args()
@@ -1248,12 +1463,14 @@ def main():
                     port=int(os.getenv("POSTGRES_PORT", "5432")),
                     database=os.getenv("POSTGRES_DB", "aura_underwriting"),
                     user=os.getenv("POSTGRES_USER", "aura_user"),
-                    password=os.getenv("POSTGRES_PASSWORD", "aura_password")
+                    password=os.getenv("POSTGRES_PASSWORD", "aura_password"),
                 )
                 print("   ✓ Connected to PostgreSQL")
             except Exception as e:
                 print(f"   ❌ Connection failed: {e}")
-                print("   💡 Make sure Docker services are running: docker compose up -d")
+                print(
+                    "   💡 Make sure Docker services are running: docker compose up -d"
+                )
                 sys.exit(1)
         else:
             print("\n❌ BigQuery seeding not implemented yet.")
@@ -1279,4 +1496,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

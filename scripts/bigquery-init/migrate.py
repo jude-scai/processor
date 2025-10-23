@@ -16,6 +16,7 @@ from google.auth.credentials import AnonymousCredentials
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+
 def init_bigquery_schema():
     """Initialize BigQuery schema using client.create_table (fast and reliable on emulator)."""
 
@@ -34,7 +35,7 @@ def init_bigquery_schema():
     client = bigquery.Client(
         project=project_id,
         credentials=AnonymousCredentials(),
-        client_options={"api_endpoint": f"http://{emulator_host}"}
+        client_options={"api_endpoint": f"http://{emulator_host}"},
     )
 
     # Create dataset
@@ -102,7 +103,10 @@ def init_bigquery_schema():
         created += 1
         print(f"   • ✅ {name}", flush=True)
 
-    print(f"\n🎉 Schema initialization complete ({created} tables created/verified)", flush=True)
+    print(
+        f"\n🎉 Schema initialization complete ({created} tables created/verified)",
+        flush=True,
+    )
 
     # Verify list
     tables_list = list(client.list_tables(full_dataset_id))
@@ -112,6 +116,7 @@ def init_bigquery_schema():
 
     return True
 
+
 if __name__ == "__main__":
     try:
         success = init_bigquery_schema()
@@ -119,6 +124,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"❌ Schema initialization failed: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
-
