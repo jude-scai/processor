@@ -5,6 +5,11 @@ Core processor execution framework with 3-phase pipeline:
 - Pre-extraction: Input validation and transformation
 - Extraction: Factor extraction from validated inputs
 - Post-extraction: Result validation and persistence
+
+Architecture:
+- services/ - Business logic services (filtration, execution, consolidation)
+- utils/ - Utility functions (payload formatting, hashing)
+- processors/ - Individual processor implementations
 """
 
 from .base_processor import BaseProcessor
@@ -27,6 +32,20 @@ from .models import (
     ProcessorConfig,
     ExecutionPayload,
     ValidationResult,
+)
+from .services import (
+    Orchestrator,
+    create_orchestrator,
+    filtration,
+    prepare_processor,
+    generate_execution,
+    execution,
+    run_single_execution,
+    consolidation,
+)
+from .utils import (
+    generate_payload_hash,
+    format_payload_list,
 )
 
 __all__ = [
@@ -52,5 +71,19 @@ __all__ = [
     "ProcessorConfig",
     "ExecutionPayload",
     "ValidationResult",
+    
+    # Services (Orchestrator class + plain functions)
+    "Orchestrator",
+    "create_orchestrator",
+    "filtration",
+    "prepare_processor",
+    "generate_execution",
+    "execution",
+    "run_single_execution",
+    "consolidation",
+    
+    # Utils
+    "generate_payload_hash",
+    "format_payload_list",
 ]
 

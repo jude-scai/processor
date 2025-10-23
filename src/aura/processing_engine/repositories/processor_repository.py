@@ -10,6 +10,34 @@ Handles database operations for processor configuration and management:
 
 from typing import Any, Optional
 from datetime import datetime
+import re
+
+
+def _parse_pg_array(pg_array_str: str | list) -> list[str]:
+    """
+    Parse PostgreSQL array string to Python list.
+    
+    PostgreSQL returns arrays as strings like '{val1,val2,val3}'
+    
+    Args:
+        pg_array_str: PostgreSQL array string or already parsed list
+        
+    Returns:
+        Python list of values
+    """
+    if isinstance(pg_array_str, list):
+        return pg_array_str
+    
+    if not pg_array_str or pg_array_str == '{}':
+        return []
+    
+    # Remove braces and split by comma
+    # Handle format: {uuid1,uuid2,uuid3}
+    clean = pg_array_str.strip('{}')
+    if not clean:
+        return []
+    
+    return [item.strip() for item in clean.split(',')]
 
 
 class ProcessorRepository:
@@ -178,11 +206,17 @@ class ProcessorRepository:
             if row:
                 # If using RealDictCursor, row is already dict-like
                 if hasattr(row, 'keys'):
-                    return dict(row)
+                    result = dict(row)
                 else:
                     # Regular tuple row, need to convert
                     columns = [desc[0] for desc in cursor.description]
-                    return dict(zip(columns, row))
+                    result = dict(zip(columns, row))
+                
+                # Parse current_executions_list from PostgreSQL array format
+                if 'current_executions_list' in result:
+                    result['current_executions_list'] = _parse_pg_array(result['current_executions_list'])
+                
+                return result
             return None
         except Exception as e:
             print(f"Error fetching underwriting processor: {e}")
@@ -253,6 +287,11 @@ class ProcessorRepository:
                 columns = [desc[0] for desc in cursor.description]
                 result = [dict(zip(columns, row)) for row in rows]
             
+            # Parse current_executions_list from PostgreSQL array format for each row
+            for row in result:
+                if 'current_executions_list' in row:
+                    row['current_executions_list'] = _parse_pg_array(row['current_executions_list'])
+            
             return result
         except Exception as e:
             print(f"Error fetching underwriting processors: {e}")
@@ -276,7 +315,7 @@ class ProcessorRepository:
         query = """
         UPDATE underwriting_processors
         SET
-            current_executions_list = %s,
+            current_executions_list = %s::uuid[],
             updated_at = %s
         WHERE id = %s
         """

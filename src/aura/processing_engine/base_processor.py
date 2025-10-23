@@ -28,6 +28,7 @@ from .models import (
 )
 from .repositories.processor_repository import ProcessorRepository
 from .repositories.execution_repository import ExecutionRepository
+from .utils.payload import format_payload_list as format_payload_list_util
 
 
 class BaseProcessor(ABC):
@@ -156,10 +157,10 @@ class BaseProcessor(ABC):
         Override this method for processors that can have multiple executions
         (e.g., bank statements across multiple months that need averaging).
 
-        Default behavior: Return the last execution's output, or empty dict if none.
+        Default behavior: Return the last execution's factors_delta, or empty dict if none.
 
         Args:
-            executions: List of active execution records with .output attributes
+            executions: List of active execution records (dicts with 'factors_delta' key)
 
         Returns:
             Consolidated factors dictionary
@@ -167,8 +168,12 @@ class BaseProcessor(ABC):
         if not executions:
             return {}
         if len(executions) == 1:
-            return executions[0].output or {}
-        return executions[-1].output or {}
+            exec_data = executions[0]
+            return exec_data.get('factors_delta') or {} if isinstance(exec_data, dict) else (exec_data.factors_delta or {})
+        
+        # Return latest execution's factors
+        latest = executions[-1]
+        return latest.get('factors_delta') or {} if isinstance(latest, dict) else (latest.factors_delta or {})
 
     # =====================================================================
     # FORMAT PAYLOAD LIST (For Orchestration)
@@ -189,81 +194,11 @@ class BaseProcessor(ABC):
         Returns:
             List of payload dictionaries, or empty list if no triggers matched
         """
-        if self.PROCESSOR_TYPE == ProcessorType.APPLICATION:
-            return self._format_application_payload(underwriting_data)
-        elif self.PROCESSOR_TYPE == ProcessorType.STIPULATION:
-            return self._format_stipulation_payload(underwriting_data)
-        elif self.PROCESSOR_TYPE == ProcessorType.DOCUMENT:
-            return self._format_document_payload(underwriting_data)
-        else:
-            return []
-    
-    def _format_application_payload(self, underwriting_data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Format payload for APPLICATION type processor."""
-        # Get trigger fields from PROCESSOR_TRIGGERS
-        trigger_fields = self.PROCESSOR_TRIGGERS.get('application_form', [])
-        
-        # Build application form from underwriting merchant fields
-        application_form = {}
-        merchant = underwriting_data.get('merchant', {})
-        
-        # Map merchant fields to dot notation
-        field_mapping = {
-            'name': 'merchant.name',
-            'ein': 'merchant.ein',
-            'industry': 'merchant.industry',
-            'email': 'merchant.email',
-            'phone': 'merchant.phone',
-            'website': 'merchant.website',
-            'entity_type': 'merchant.entity_type',
-            'incorporation_date': 'merchant.incorporation_date',
-            'state_of_incorporation': 'merchant.state_of_incorporation',
-        }
-        
-        for field, dot_key in field_mapping.items():
-            value = merchant.get(field)
-            if value is not None:
-                application_form[dot_key] = value
-        
-        # Check if all trigger fields are null
-        has_data = any(application_form.get(field) is not None for field in trigger_fields)
-        
-        if not has_data:
-            return []
-        
-        # Return single payload with application form and owners
-        return [{
-            "application_form": application_form,
-            "owners_list": underwriting_data.get('owners', [])
-        }]
-    
-    def _format_stipulation_payload(self, underwriting_data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Format payload for STIPULATION type processor."""
-        # Get stipulation type from PROCESSOR_TRIGGERS
-        trigger_docs = self.PROCESSOR_TRIGGERS.get('documents_list', [])
-        
-        if not trigger_docs:
-            return []
-        
-        stipulation_type = trigger_docs[0]  # e.g., 's_bank_statement'
-        
-        # Filter documents by stipulation type
-        # Note: underwriting_data doesn't have documents yet - need to query separately
-        # For now, return empty (will be enhanced when document integration is added)
-        return []
-    
-    def _format_document_payload(self, underwriting_data: dict[str, Any]) -> list[dict[str, Any]]:
-        """Format payload for DOCUMENT type processor."""
-        # Get stipulation type from PROCESSOR_TRIGGERS
-        trigger_docs = self.PROCESSOR_TRIGGERS.get('documents_list', [])
-        
-        if not trigger_docs:
-            return []
-        
-        # Filter documents and create one payload per document
-        # Note: underwriting_data doesn't have documents yet - need to query separately
-        # For now, return empty (will be enhanced when document integration is added)
-        return []
+        return format_payload_list_util(
+            processor_type=self.PROCESSOR_TYPE,
+            processor_triggers=self.PROCESSOR_TRIGGERS,
+            underwriting_data=underwriting_data
+        )
 
     # =====================================================================
     # COST TRACKING

@@ -33,6 +33,14 @@ processor/
 - **PostgreSQL 16** (via Docker)
 - **Redis 7** (via Docker)
 
+## 📚 Documentation
+
+Comprehensive documentation is available in the [`docs/`](docs/) directory:
+
+- **[FILTRATION.md](docs/FILTRATION.md)** - Filtration service guide (logging, testing, verification)
+- **[API_WORKFLOWS.md](docs/API_WORKFLOWS.md)** - API endpoints and workflow execution
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Service architecture and design
+
 ## Quick Start
 
 ### 1. Clone and Setup

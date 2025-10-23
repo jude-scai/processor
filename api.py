@@ -196,19 +196,49 @@ def get_underwriting(underwriting_id: str):
 
 @app.post("/trigger/workflow1")
 def trigger_workflow1(request: TriggerWorkflow1Request):
-    """Trigger Workflow 1 - Automatic processor execution (underwriting.updated)."""
+    """
+    Trigger Workflow 1 - Automatic processor execution (underwriting.updated).
+    
+    This endpoint directly executes the workflow and logs to test_workflow table.
+    """
     try:
-        message_id = publish_message(
-            topic_name="underwriting.updated",
-            data={"underwriting_id": request.underwriting_id}
-        )
+        # Import orchestration service
+        from aura.processing_engine.orchestration_service import create_orchestration_service
+        from aura.processing_engine.processors.test_processor import TestApplicationProcessor
+        
+        # Create orchestration service with test tracking enabled
+        conn = get_db_connection()
+        service = create_orchestration_service(conn, enable_test_tracking=True)
+        
+        # Register processors (add more as needed)
+        service.register_processor("p_application", TestApplicationProcessor)
+        
+        # Execute workflow
+        result = service.handle_workflow1(request.underwriting_id)
+        
+        # Close connection
+        conn.close()
+        
+        # Also publish to Pub/Sub for any subscribers
+        try:
+            message_id = publish_message(
+                topic_name="underwriting.updated",
+                data={"underwriting_id": request.underwriting_id}
+            )
+        except Exception as pub_error:
+            message_id = f"pub_error: {str(pub_error)}"
         
         return {
-            "success": True,
+            "success": result.get("success", False),
             "workflow": "Workflow 1 - Automatic Execution",
-            "topic": "underwriting.updated",
-            "message_id": message_id,
-            "payload": {"underwriting_id": request.underwriting_id}
+            "underwriting_id": request.underwriting_id,
+            "processors_selected": result.get("processors_selected", 0),
+            "executions_run": result.get("executions_run", 0),
+            "executions_failed": result.get("executions_failed", 0),
+            "processors_consolidated": result.get("processors_consolidated", 0),
+            "message": result.get("message", "Workflow completed"),
+            "pubsub_message_id": message_id,
+            "test_workflow_logged": True
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

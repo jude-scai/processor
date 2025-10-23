@@ -43,6 +43,7 @@ class TestWorkflowRepository:
         workflow_name: str,
         stage: str,
         payload: dict[str, Any],
+        input: Optional[dict[str, Any]] = None,
         output: Optional[dict[str, Any]] = None,
         status: str = 'completed',
         error_message: Optional[str] = None,
@@ -78,6 +79,7 @@ class TestWorkflowRepository:
                     workflow_name,
                     stage,
                     payload,
+                    input,
                     payload_hash,
                     output,
                     status,
@@ -85,7 +87,7 @@ class TestWorkflowRepository:
                     execution_time_ms,
                     metadata
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 RETURNING id
             """, (
@@ -93,6 +95,7 @@ class TestWorkflowRepository:
                 workflow_name,
                 stage,
                 json.dumps(payload, default=_json_serial),
+                json.dumps(input, default=_json_serial) if input else None,
                 payload_hash,
                 json.dumps(output, default=_json_serial) if output else None,
                 status,

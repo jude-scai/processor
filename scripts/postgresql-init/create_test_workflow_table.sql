@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS test_workflow (
     underwriting_id UUID NOT NULL,
     workflow_name TEXT NOT NULL,  -- e.g., 'Workflow 1', 'Workflow 2'
     stage TEXT NOT NULL,           -- e.g., 'filtration', 'execution', 'consolidation'
-    payload JSONB NOT NULL,        -- Input data for this stage
+    payload JSONB NOT NULL,        -- Parameters/arguments for this stage
+    input JSONB,                   -- Actual input data being processed
     payload_hash TEXT,             -- Hash of payload for deduplication tracking
     output JSONB,                  -- Output/result of this stage
     status TEXT NOT NULL CHECK (status IN ('started', 'completed', 'failed')),
@@ -25,9 +26,10 @@ CREATE INDEX IF NOT EXISTS idx_test_workflow_hash ON test_workflow(payload_hash)
 
 -- Comments
 COMMENT ON TABLE test_workflow IS 'Tracks workflow execution stages for debugging and testing orchestration flows';
-COMMENT ON COLUMN test_workflow.stage IS 'Workflow stage: filtration, prepare_processor, generate_execution, execution, run_execution, consolidation';
-COMMENT ON COLUMN test_workflow.payload IS 'Input data for this stage';
+COMMENT ON COLUMN test_workflow.stage IS 'Workflow stage: filtration, prepare_processor, format_payload_list, generate_execution, execution, run_execution, consolidation';
+COMMENT ON COLUMN test_workflow.payload IS 'Parameters/arguments passed to this stage (e.g., underwriting_id, processor_id, flags)';
+COMMENT ON COLUMN test_workflow.input IS 'Actual input data being processed (e.g., eligible processors, underwriting data, payload to hash)';
 COMMENT ON COLUMN test_workflow.payload_hash IS 'Hash of payload for tracking deduplication logic';
-COMMENT ON COLUMN test_workflow.output IS 'Result/output of this stage execution';
-COMMENT ON COLUMN test_workflow.metadata IS 'Additional context: processor_list, execution_list, counts, etc.';
+COMMENT ON COLUMN test_workflow.output IS 'Result/output produced by this stage (e.g., processor_list, execution_list, generated payloads)';
+COMMENT ON COLUMN test_workflow.metadata IS 'Additional context: counts, flags, processor details, etc.';
 

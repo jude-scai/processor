@@ -10,6 +10,17 @@ Handles database operations for processor executions:
 
 from typing import Any, Optional
 from datetime import datetime
+from decimal import Decimal
+import json
+
+
+def _json_serial(obj):
+    """JSON serializer for objects not serializable by default."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 class ExecutionRepository:
@@ -76,33 +87,36 @@ class ExecutionRepository:
             enabled,
             payload,
             payload_hash,
-            document_revision_ids,
-            document_ids_hash,
             created_at,
             updated_at
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         """
 
         now = datetime.utcnow()
 
-        # TODO: Execute insert with db connection
-        # self.db.execute(query, (
-        #     execution_id,
-        #     organization_id,
-        #     underwriting_id,
-        #     underwriting_processor_id,
-        #     processor_name,
-        #     'pending',
-        #     True,
-        #     payload,
-        #     payload_hash,
-        #     document_revision_ids,
-        #     document_ids_hash,
-        #     now,
-        #     now
-        # ))
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (
+                execution_id,
+                organization_id,
+                underwriting_id,
+                underwriting_processor_id,
+                processor_name,
+                'pending',
+                True,
+                json.dumps(payload, default=_json_serial),
+                payload_hash,
+                now,
+                now
+            ))
+            self.db.commit()
+            cursor.close()
+        except Exception as e:
+            print(f"Error creating execution: {e}")
+            self.db.rollback()
+            raise
 
         return execution_id
 
@@ -133,10 +147,7 @@ class ExecutionRepository:
             enabled,
             payload,
             payload_hash,
-            output,
             factors_delta,
-            document_revision_ids,
-            document_ids_hash,
             run_cost_cents,
             started_at,
             completed_at,
@@ -150,9 +161,15 @@ class ExecutionRepository:
         ORDER BY created_at DESC
         LIMIT 1
         """
-        # TODO: Execute query with db connection
-        # return self.db.execute(query, (underwriting_processor_id, payload_hash)).fetchone()
-        return None
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (underwriting_processor_id, payload_hash))
+            result = cursor.fetchone()
+            cursor.close()
+            return dict(result) if result else None
+        except Exception as e:
+            print(f"Error finding execution by hash: {e}")
+            return None
 
     # =========================================================================
     # EXECUTION STATUS UPDATES
@@ -208,17 +225,23 @@ class ExecutionRepository:
         WHERE id = %s
         """
 
-        # TODO: Execute update with db connection
-        # self.db.execute(query, params)
-        # return True
-        return False
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, params)
+            self.db.commit()
+            cursor.close()
+            return True
+        except Exception as e:
+            print(f"Error updating execution status: {e}")
+            self.db.rollback()
+            return False
 
     def save_execution_result(
         self,
         execution_id: str,
         output: dict[str, Any],
-        factors_delta: Optional[dict[str, Any]],
-        run_cost_cents: int,
+        factors: Optional[dict[str, Any]],
+        cost_cents: int,
         completed_at: datetime
     ) -> bool:
         """
@@ -226,19 +249,22 @@ class ExecutionRepository:
 
         Args:
             execution_id: Execution UUID
-            output: Processor execution output
-            factors_delta: Factors written by this execution
-            run_cost_cents: Cost in cents
+            output: Processor execution output (stored in factors_delta for now)
+            factors: Additional factors (merged with output)
+            cost_cents: Cost in cents
             completed_at: Completion timestamp
 
         Returns:
             True if save successful
         """
+        # Merge output and factors (output takes precedence)
+        # Store in factors_delta column since there's no output column
+        combined_factors = {**(factors or {}), **output}
+        
         query = """
         UPDATE processor_executions
         SET
             status = 'completed',
-            output = %s,
             factors_delta = %s,
             run_cost_cents = %s,
             completed_at = %s,
@@ -248,17 +274,22 @@ class ExecutionRepository:
 
         now = datetime.utcnow()
 
-        # TODO: Execute update with db connection
-        # self.db.execute(query, (
-        #     output,
-        #     factors_delta,
-        #     run_cost_cents,
-        #     completed_at,
-        #     now,
-        #     execution_id
-        # ))
-        # return True
-        return False
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (
+                json.dumps(combined_factors, default=_json_serial) if combined_factors else None,
+                cost_cents,
+                completed_at,
+                now,
+                execution_id
+            ))
+            self.db.commit()
+            cursor.close()
+            return True
+        except Exception as e:
+            print(f"Error saving execution result: {e}")
+            self.db.rollback()
+            return False
 
     # =========================================================================
     # EXECUTION RETRIEVAL
@@ -288,10 +319,7 @@ class ExecutionRepository:
             enabled,
             payload,
             payload_hash,
-            output,
             factors_delta,
-            document_revision_ids,
-            document_ids_hash,
             run_cost_cents,
             started_at,
             completed_at,
@@ -303,9 +331,15 @@ class ExecutionRepository:
         FROM processor_executions
         WHERE id = %s
         """
-        # TODO: Execute query with db connection
-        # return self.db.execute(query, (execution_id,)).fetchone()
-        return None
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (execution_id,))
+            result = cursor.fetchone()
+            cursor.close()
+            return dict(result) if result else None
+        except Exception as e:
+            print(f"Error fetching execution by id: {e}")
+            return None
 
     def get_active_executions(
         self,
@@ -336,10 +370,7 @@ class ExecutionRepository:
             pe.enabled,
             pe.payload,
             pe.payload_hash,
-            pe.output,
             pe.factors_delta,
-            pe.document_revision_ids,
-            pe.document_ids_hash,
             pe.run_cost_cents,
             pe.completed_at,
             pe.created_at
@@ -352,9 +383,15 @@ class ExecutionRepository:
           AND pe.id = ANY(up.current_executions_list)
         ORDER BY pe.completed_at DESC
         """
-        # TODO: Execute query with db connection
-        # return self.db.execute(query, (underwriting_processor_id,)).fetchall()
-        return []
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (underwriting_processor_id,))
+            results = cursor.fetchall()
+            cursor.close()
+            return [dict(row) for row in results] if results else []
+        except Exception as e:
+            print(f"Error fetching active executions: {e}")
+            return []
 
     def get_executions_by_underwriting(
         self,
@@ -382,7 +419,7 @@ class ExecutionRepository:
             processor,
             status,
             enabled,
-            output,
+            factors_delta,
             run_cost_cents,
             started_at,
             completed_at,
@@ -405,9 +442,15 @@ class ExecutionRepository:
 
         query += " ORDER BY created_at DESC"
 
-        # TODO: Execute query with db connection
-        # return self.db.execute(query, params).fetchall()
-        return []
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, params)
+            results = cursor.fetchall()
+            cursor.close()
+            return [dict(row) for row in results] if results else []
+        except Exception as e:
+            print(f"Error fetching executions by underwriting: {e}")
+            return []
 
     # =========================================================================
     # SUPERSESSION MANAGEMENT
