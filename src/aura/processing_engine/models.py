@@ -12,6 +12,7 @@ from typing import Any
 
 class ExecutionStatus(str, Enum):
     """Execution status enumeration"""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -21,6 +22,7 @@ class ExecutionStatus(str, Enum):
 
 class ProcessorType(str, Enum):
     """Processor type enumeration"""
+
     APPLICATION = "application"
     STIPULATION = "stipulation"
     DOCUMENT = "document"
@@ -84,7 +86,9 @@ class ProcessingResult:
             "underwriting_processor_id": self.underwriting_processor_id,
             "status": self.status.value,
             "started_at": self.started_at.isoformat(),
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "completed_at": (
+                self.completed_at.isoformat() if self.completed_at else None
+            ),
             "duration_seconds": self.duration_seconds,
             "output": self.output,
             "total_cost_cents": self.total_cost_cents,
@@ -191,4 +195,3 @@ class ValidationResult:
     def __bool__(self) -> bool:
         """Allow boolean evaluation"""
         return self.is_valid
-

@@ -18,6 +18,7 @@ class ProcessorException(Exception):
 
 # Pre-extraction Phase Exceptions
 
+
 class PrevalidationError(ProcessorException):
     """
     Raised during input pre-validation when prerequisite checks fail.
@@ -27,6 +28,7 @@ class PrevalidationError(ProcessorException):
     - Document is not of correct stipulation type
     - Missing underwriting_id
     """
+
     pass
 
 
@@ -40,6 +42,7 @@ class InputValidationError(ProcessorException):
     - Data type mismatches
     - Business rule violations in input
     """
+
     pass
 
 
@@ -53,10 +56,12 @@ class TransformationError(ProcessorException):
     - Document splicing errors
     - Chunking failures
     """
+
     pass
 
 
 # Extraction Phase Exceptions
+
 
 class FactorExtractionError(ProcessorException):
     """
@@ -68,6 +73,7 @@ class FactorExtractionError(ProcessorException):
     - Calculation errors
     - Data processing failures
     """
+
     pass
 
 
@@ -80,6 +86,7 @@ class DataTransformationError(ProcessorException):
     - Chunking failures
     - Normalization errors
     """
+
     pass
 
 
@@ -101,7 +108,7 @@ class ApiError(ProcessorException):
         processor_name: str | None = None,
         api_name: str | None = None,
         status_code: int | None = None,
-        is_retryable: bool = False
+        is_retryable: bool = False,
     ):
         self.api_name = api_name
         self.status_code = status_code
@@ -110,6 +117,7 @@ class ApiError(ProcessorException):
 
 
 # Post-extraction Phase Exceptions
+
 
 class ResultValidationError(ProcessorException):
     """
@@ -121,10 +129,12 @@ class ResultValidationError(ProcessorException):
     - Output doesn't meet processor-specific requirements
     - Inconsistent or incomplete results
     """
+
     pass
 
 
 # Database and Persistence Exceptions
+
 
 class PersistenceError(ProcessorException):
     """
@@ -135,10 +145,12 @@ class PersistenceError(ProcessorException):
     - Transaction rollback errors
     - Constraint violations
     """
+
     pass
 
 
 # Configuration Exceptions
+
 
 class ConfigurationError(ProcessorException):
     """
@@ -149,5 +161,5 @@ class ConfigurationError(ProcessorException):
     - Invalid configuration values
     - Configuration type mismatches
     """
-    pass
 
+    pass

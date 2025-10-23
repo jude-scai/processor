@@ -9,7 +9,7 @@ atomic success/failure semantics.
 import hashlib
 import json
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from .exceptions import (
@@ -65,7 +65,7 @@ class BaseProcessor(ABC):
     def __init__(
         self,
         processor_repo: Optional[ProcessorRepository] = None,
-        execution_repo: Optional[ExecutionRepository] = None
+        execution_repo: Optional[ExecutionRepository] = None,
     ):
         """
         Initialize the processor with cost tracking and repository connections.
@@ -123,7 +123,9 @@ class BaseProcessor(ABC):
         default_config = self.CONFIG if hasattr(self, "CONFIG") else {}
 
         # Get effective config from database (tenant + underwriting overrides)
-        db_config = self._processor_repo.get_effective_config(self._underwriting_processor_id)
+        db_config = self._processor_repo.get_effective_config(
+            self._underwriting_processor_id
+        )
 
         # Merge: system defaults < database config
         return {**default_config, **db_config}
@@ -169,35 +171,45 @@ class BaseProcessor(ABC):
             return {}
         if len(executions) == 1:
             exec_data = executions[0]
-            return exec_data.get('factors_delta') or {} if isinstance(exec_data, dict) else (exec_data.factors_delta or {})
-        
+            return (
+                exec_data.get("factors_delta") or {}
+                if isinstance(exec_data, dict)
+                else (exec_data.factors_delta or {})
+            )
+
         # Return latest execution's factors
         latest = executions[-1]
-        return latest.get('factors_delta') or {} if isinstance(latest, dict) else (latest.factors_delta or {})
+        return (
+            latest.get("factors_delta") or {}
+            if isinstance(latest, dict)
+            else (latest.factors_delta or {})
+        )
 
     # =====================================================================
     # FORMAT PAYLOAD LIST (For Orchestration)
     # =====================================================================
-    
-    def format_payload_list(self, underwriting_data: dict[str, Any]) -> list[dict[str, Any]]:
+
+    def format_payload_list(
+        self, underwriting_data: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """
         Format underwriting data into list of payloads for execution.
-        
+
         Implementation varies based on processor type:
         - APPLICATION: Single payload with application form fields
         - STIPULATION: Single payload with all matching document revisions
         - DOCUMENT: One payload per matching document revision
-        
+
         Args:
             underwriting_data: Complete underwriting data including merchant and owners
-            
+
         Returns:
             List of payload dictionaries, or empty list if no triggers matched
         """
         return format_payload_list_util(
             processor_type=self.PROCESSOR_TYPE,
             processor_triggers=self.PROCESSOR_TRIGGERS,
-            underwriting_data=underwriting_data
+            underwriting_data=underwriting_data,
         )
 
     # =====================================================================
@@ -260,9 +272,7 @@ class BaseProcessor(ABC):
             payload: Event payload data
         """
         # TODO: Implement actual Pub/Sub emission
-        # For now, just log the event
-        event_name = f"{self.PROCESSOR_NAME}.execution.{event_type}"
-        print(f"[EVENT] {event_name}: {payload}")
+        # Event emission disabled for cleaner output
 
     # =====================================================================
     # ABSTRACT METHODS (Must be implemented by subclasses)
@@ -394,7 +404,7 @@ class BaseProcessor(ABC):
         if not validation_result.is_valid:
             raise InputValidationError(
                 f"Input validation failed: {', '.join(validation_result.errors)}",
-                processor_name=self.PROCESSOR_NAME
+                processor_name=self.PROCESSOR_NAME,
             )
 
         return transformed_data
@@ -435,7 +445,7 @@ class BaseProcessor(ABC):
         if not validation_result.is_valid:
             raise ResultValidationError(
                 f"Output validation failed: {', '.join(validation_result.errors)}",
-                processor_name=self.PROCESSOR_NAME
+                processor_name=self.PROCESSOR_NAME,
             )
 
         return output
@@ -463,7 +473,7 @@ class BaseProcessor(ABC):
         """
         self._execution_id = execution_id
         self._underwriting_processor_id = underwriting_processor_id
-        started_at = datetime.utcnow()
+        started_at = datetime.now(timezone.utc)
         status = ExecutionStatus.FAILED
         output: dict[str, Any] = {}
         error_message: str | None = None
@@ -471,11 +481,14 @@ class BaseProcessor(ABC):
         error_phase: str | None = None
 
         # Emit started event
-        self._emit_event("started", {
-            "execution_id": execution_id,
-            "underwriting_processor_id": underwriting_processor_id,
-            "processor_name": self.PROCESSOR_NAME,
-        })
+        self._emit_event(
+            "started",
+            {
+                "execution_id": execution_id,
+                "underwriting_processor_id": underwriting_processor_id,
+                "processor_name": self.PROCESSOR_NAME,
+            },
+        )
 
         try:
             # Phase 1: Pre-extraction
@@ -490,12 +503,15 @@ class BaseProcessor(ABC):
 
             # Success!
             status = ExecutionStatus.COMPLETED
-            self._emit_event("completed", {
-                "execution_id": execution_id,
-                "underwriting_processor_id": underwriting_processor_id,
-                "processor_name": self.PROCESSOR_NAME,
-                "output_keys": list(output.keys()),
-            })
+            self._emit_event(
+                "completed",
+                {
+                    "execution_id": execution_id,
+                    "underwriting_processor_id": underwriting_processor_id,
+                    "processor_name": self.PROCESSOR_NAME,
+                    "output_keys": list(output.keys()),
+                },
+            )
 
         except (PrevalidationError, InputValidationError, TransformationError) as e:
             error_phase = "pre-extraction"
@@ -523,18 +539,21 @@ class BaseProcessor(ABC):
             print(f"[ERROR] Unexpected error: {error_message}")
 
         # Finalize result
-        completed_at = datetime.utcnow()
+        completed_at = datetime.now(timezone.utc)
         duration_seconds = (completed_at - started_at).total_seconds()
 
         if status == ExecutionStatus.FAILED:
-            self._emit_event("failed", {
-                "execution_id": execution_id,
-                "underwriting_processor_id": underwriting_processor_id,
-                "processor_name": self.PROCESSOR_NAME,
-                "error_type": error_type,
-                "error_phase": error_phase,
-                "error_message": error_message,
-            })
+            self._emit_event(
+                "failed",
+                {
+                    "execution_id": execution_id,
+                    "underwriting_processor_id": underwriting_processor_id,
+                    "processor_name": self.PROCESSOR_NAME,
+                    "error_type": error_type,
+                    "error_phase": error_phase,
+                    "error_message": error_message,
+                },
+            )
 
         return ProcessingResult(
             execution_id=execution_id,
