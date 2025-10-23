@@ -58,37 +58,80 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
+### 2. Start Infrastructure
 
 ```bash
-# Copy the example configuration
-cp config.env.example .env
-
-# Edit .env with your settings (optional for local development)
-nano .env
-```
-
-### 3. Start Services
-
-```bash
-# Start all Docker services
+# Start Docker services (PostgreSQL, Pub/Sub Emulator, etc.)
 docker-compose up -d
 
 # Check service status
 docker-compose ps
 
-# View logs
-docker-compose logs -f
+# Wait for services to be ready
+sleep 5
 ```
 
-### 4. Run Tests
+### 3. Initialize Database
 
 ```bash
-# Run integration tests
-./scripts/run-tests.sh
+# Run database migrations and seed data
+python scripts/seed_data.py
+```
 
-# Or run tests manually
-pytest tests/integration/test_services.py -v
+### 4. Start AURA Services
+
+```bash
+# Start API server and Pub/Sub subscriber
+./start.sh
+```
+
+This will start:
+- **API Server** on `http://localhost:8000` (with auto-reload)
+- **Pub/Sub Subscriber** (with auto-reload on file changes)
+
+The script will:
+- ✅ Verify PostgreSQL connection
+- ✅ Verify Pub/Sub emulator connection
+- ✅ Wait for API to be ready
+- ✅ Wait for subscriber to be listening
+- ✅ Auto-reload both services on code changes
+
+### 5. Monitor Services
+
+```bash
+# View real-time logs
+tail -f logs/api.log          # API server logs
+tail -f logs/subscriber.log   # Subscriber logs
+
+# Or monitor both
+tail -f logs/*.log
+```
+
+### 6. Test Workflows
+
+```bash
+# Trigger Workflow 1 (automatic execution)
+curl -X POST http://localhost:8000/trigger/workflow1 \
+  -H "Content-Type: application/json" \
+  -d '{"underwriting_id": "<underwriting-id>"}'
+
+# View API documentation
+open http://localhost:8000/docs
+
+# Check health
+curl http://localhost:8000/health
+```
+
+### 7. Stop Services
+
+```bash
+# Press Ctrl+C in the terminal where ./start.sh is running
+# Or kill the processes:
+pkill -f "python.*api"
+pkill -f "python.*subscriber"
+
+# Stop Docker services
+docker-compose down
 ```
 
 ## Docker Services
