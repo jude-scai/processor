@@ -11,3 +11,8 @@ For example, but not limited to:
 - instead of using `Set` from `typing`, use `set` directly
 
 The list goes on.
+
+### Always import all modules at the top of the file.
+
+For example, but not limited to:
+- instead of importing modules inside a function, import them at the top of the file.
