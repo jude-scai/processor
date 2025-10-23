@@ -9,7 +9,7 @@ Handles database operations for processor executions:
 """
 
 from typing import Any, Optional
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 import json
 
@@ -17,6 +17,8 @@ import json
 def _json_serial(obj):
     """JSON serializer for objects not serializable by default."""
     if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
         return obj.isoformat()
     if isinstance(obj, Decimal):
         return float(obj)
@@ -34,14 +36,24 @@ class ExecutionRepository:
     - Execution outputs and metadata
     """
 
-    def __init__(self, db_connection: Any):
+    _instance = None
+    _db_connection = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ExecutionRepository, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self, db_connection: Any = None):
         """
         Initialize the repository with a database connection.
 
         Args:
             db_connection: Database connection or session (PostgreSQL/BigQuery)
         """
-        self.db = db_connection
+        if db_connection is not None:
+            self._db_connection = db_connection
+        self.db = self._db_connection
 
     # =========================================================================
     # EXECUTION CREATION
@@ -56,7 +68,7 @@ class ExecutionRepository:
         payload: dict[str, Any],
         payload_hash: str,
         document_revision_ids: Optional[list[str]] = None,
-        document_ids_hash: Optional[str] = None
+        document_ids_hash: Optional[str] = None,
     ) -> str:
         """
         Create a new processor execution record.
@@ -98,19 +110,22 @@ class ExecutionRepository:
 
         try:
             cursor = self.db.cursor()
-            cursor.execute(query, (
-                execution_id,
-                organization_id,
-                underwriting_id,
-                underwriting_processor_id,
-                processor_name,
-                'pending',
-                True,
-                json.dumps(payload, default=_json_serial),
-                payload_hash,
-                now,
-                now
-            ))
+            cursor.execute(
+                query,
+                (
+                    execution_id,
+                    organization_id,
+                    underwriting_id,
+                    underwriting_processor_id,
+                    processor_name,
+                    "pending",
+                    True,
+                    json.dumps(payload, default=_json_serial),
+                    payload_hash,
+                    now,
+                    now,
+                ),
+            )
             self.db.commit()
             cursor.close()
         except Exception as e:
@@ -121,9 +136,7 @@ class ExecutionRepository:
         return execution_id
 
     def find_execution_by_hash(
-        self,
-        underwriting_processor_id: str,
-        payload_hash: str
+        self, underwriting_processor_id: str, payload_hash: str
     ) -> Optional[dict[str, Any]]:
         """
         Find an existing execution by payload hash.
@@ -182,7 +195,7 @@ class ExecutionRepository:
         started_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None,
         failed_code: Optional[str] = None,
-        failed_reason: Optional[str] = None
+        failed_reason: Optional[str] = None,
     ) -> bool:
         """
         Update the status of an execution.
@@ -242,7 +255,7 @@ class ExecutionRepository:
         output: dict[str, Any],
         factors: Optional[dict[str, Any]],
         cost_cents: int,
-        completed_at: datetime
+        completed_at: datetime,
     ) -> bool:
         """
         Save the execution result (output, factors, cost).
@@ -260,7 +273,7 @@ class ExecutionRepository:
         # Merge output and factors (output takes precedence)
         # Store in factors_delta column since there's no output column
         combined_factors = {**(factors or {}), **output}
-        
+
         query = """
         UPDATE processor_executions
         SET
@@ -276,13 +289,20 @@ class ExecutionRepository:
 
         try:
             cursor = self.db.cursor()
-            cursor.execute(query, (
-                json.dumps(combined_factors, default=_json_serial) if combined_factors else None,
-                cost_cents,
-                completed_at,
-                now,
-                execution_id
-            ))
+            cursor.execute(
+                query,
+                (
+                    (
+                        json.dumps(combined_factors, default=_json_serial)
+                        if combined_factors
+                        else None
+                    ),
+                    cost_cents,
+                    completed_at,
+                    now,
+                    execution_id,
+                ),
+            )
             self.db.commit()
             cursor.close()
             return True
@@ -295,10 +315,7 @@ class ExecutionRepository:
     # EXECUTION RETRIEVAL
     # =========================================================================
 
-    def get_execution_by_id(
-        self,
-        execution_id: str
-    ) -> Optional[dict[str, Any]]:
+    def get_execution_by_id(self, execution_id: str) -> Optional[dict[str, Any]]:
         """
         Get execution record by ID.
 
@@ -342,8 +359,7 @@ class ExecutionRepository:
             return None
 
     def get_active_executions(
-        self,
-        underwriting_processor_id: str
+        self, underwriting_processor_id: str
     ) -> list[dict[str, Any]]:
         """
         Get all active (current) executions for a processor.
@@ -397,7 +413,7 @@ class ExecutionRepository:
         self,
         underwriting_id: str,
         processor_name: Optional[str] = None,
-        status: Optional[str] = None
+        status: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """
         Get all executions for an underwriting.
@@ -457,9 +473,7 @@ class ExecutionRepository:
     # =========================================================================
 
     def mark_execution_superseded(
-        self,
-        old_execution_id: str,
-        new_execution_id: str
+        self, old_execution_id: str, new_execution_id: str
     ) -> bool:
         """
         Mark an execution as superseded by a newer execution.
@@ -485,10 +499,7 @@ class ExecutionRepository:
         # return True
         return False
 
-    def get_execution_chain(
-        self,
-        execution_id: str
-    ) -> list[dict[str, Any]]:
+    def get_execution_chain(self, execution_id: str) -> list[dict[str, Any]]:
         """
         Get the full chain of executions (original -> updates).
 
@@ -509,10 +520,7 @@ class ExecutionRepository:
     # ACTIVATION/DEACTIVATION
     # =========================================================================
 
-    def activate_execution(
-        self,
-        execution_id: str
-    ) -> bool:
+    def activate_execution(self, execution_id: str) -> bool:
         """
         Activate an execution (set enabled = true).
 
@@ -534,10 +542,7 @@ class ExecutionRepository:
         # return True
         return False
 
-    def deactivate_execution(
-        self,
-        execution_id: str
-    ) -> bool:
+    def deactivate_execution(self, execution_id: str) -> bool:
         """
         Deactivate an execution (set enabled = false).
 
@@ -567,12 +572,11 @@ class ExecutionRepository:
     def _generate_uuid(self) -> str:
         """Generate a UUID for new records."""
         import uuid
+
         return str(uuid.uuid4())
 
     def get_execution_count(
-        self,
-        underwriting_id: str,
-        processor_name: Optional[str] = None
+        self, underwriting_id: str, processor_name: Optional[str] = None
     ) -> int:
         """
         Get count of executions for an underwriting.
@@ -600,4 +604,3 @@ class ExecutionRepository:
         # result = self.db.execute(query, params).fetchone()
         # return result['count'] if result else 0
         return 0
-

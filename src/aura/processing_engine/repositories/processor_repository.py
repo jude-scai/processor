@@ -16,28 +16,28 @@ import re
 def _parse_pg_array(pg_array_str: str | list) -> list[str]:
     """
     Parse PostgreSQL array string to Python list.
-    
+
     PostgreSQL returns arrays as strings like '{val1,val2,val3}'
-    
+
     Args:
         pg_array_str: PostgreSQL array string or already parsed list
-        
+
     Returns:
         Python list of values
     """
     if isinstance(pg_array_str, list):
         return pg_array_str
-    
-    if not pg_array_str or pg_array_str == '{}':
+
+    if not pg_array_str or pg_array_str == "{}":
         return []
-    
+
     # Remove braces and split by comma
     # Handle format: {uuid1,uuid2,uuid3}
-    clean = pg_array_str.strip('{}')
+    clean = pg_array_str.strip("{}")
     if not clean:
         return []
-    
-    return [item.strip() for item in clean.split(',')]
+
+    return [item.strip() for item in clean.split(",")]
 
 
 class ProcessorRepository:
@@ -50,14 +50,24 @@ class ProcessorRepository:
     - Underwriting processor configurations (underwriting_processors)
     """
 
-    def __init__(self, db_connection: Any):
+    _instance = None
+    _db_connection = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ProcessorRepository, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self, db_connection: Any = None):
         """
         Initialize the repository with a database connection.
 
         Args:
             db_connection: Database connection or session (PostgreSQL/BigQuery)
         """
-        self.db = db_connection
+        if db_connection is not None:
+            self._db_connection = db_connection
+        self.db = self._db_connection
 
     # =========================================================================
     # SYSTEM PROCESSOR CATALOG
@@ -82,8 +92,7 @@ class ProcessorRepository:
     # =========================================================================
 
     def get_purchased_processor_by_id(
-        self,
-        purchased_processor_id: str
+        self, purchased_processor_id: str
     ) -> Optional[dict[str, Any]]:
         """
         Get a specific purchased processor by ID.
@@ -116,10 +125,7 @@ class ProcessorRepository:
         return None
 
     def get_purchased_processors_by_organization(
-        self,
-        organization_id: str,
-        enabled_only: bool = False,
-        auto_only: bool = False
+        self, organization_id: str, enabled_only: bool = False, auto_only: bool = False
     ) -> list[dict[str, Any]]:
         """
         Get all purchased processors for an organization.
@@ -166,8 +172,7 @@ class ProcessorRepository:
     # =========================================================================
 
     def get_underwriting_processor_by_id(
-        self,
-        underwriting_processor_id: str
+        self, underwriting_processor_id: str
     ) -> Optional[dict[str, Any]]:
         """
         Get a specific underwriting processor configuration.
@@ -202,20 +207,22 @@ class ProcessorRepository:
             cursor = self.db.cursor()
             cursor.execute(query, (underwriting_processor_id,))
             row = cursor.fetchone()
-            
+
             if row:
                 # If using RealDictCursor, row is already dict-like
-                if hasattr(row, 'keys'):
+                if hasattr(row, "keys"):
                     result = dict(row)
                 else:
                     # Regular tuple row, need to convert
                     columns = [desc[0] for desc in cursor.description]
                     result = dict(zip(columns, row))
-                
+
                 # Parse current_executions_list from PostgreSQL array format
-                if 'current_executions_list' in result:
-                    result['current_executions_list'] = _parse_pg_array(result['current_executions_list'])
-                
+                if "current_executions_list" in result:
+                    result["current_executions_list"] = _parse_pg_array(
+                        result["current_executions_list"]
+                    )
+
                 return result
             return None
         except Exception as e:
@@ -223,10 +230,7 @@ class ProcessorRepository:
             return None
 
     def get_underwriting_processors(
-        self,
-        underwriting_id: str,
-        enabled_only: bool = True,
-        auto_only: bool = False
+        self, underwriting_id: str, enabled_only: bool = True, auto_only: bool = False
     ) -> list[dict[str, Any]]:
         """
         Get all processors configured for an underwriting.
@@ -275,32 +279,32 @@ class ProcessorRepository:
             cursor = self.db.cursor()
             cursor.execute(query, (underwriting_id,))
             rows = cursor.fetchall()
-            
+
             # If using RealDictCursor, rows are already dict-like
             # Otherwise, convert them
             result = []
-            if rows and hasattr(rows[0], 'keys'):
+            if rows and hasattr(rows[0], "keys"):
                 # RealDictRow or similar dict-like object
                 result = [dict(row) for row in rows]
             else:
                 # Regular tuple rows, need to convert
                 columns = [desc[0] for desc in cursor.description]
                 result = [dict(zip(columns, row)) for row in rows]
-            
+
             # Parse current_executions_list from PostgreSQL array format for each row
             for row in result:
-                if 'current_executions_list' in row:
-                    row['current_executions_list'] = _parse_pg_array(row['current_executions_list'])
-            
+                if "current_executions_list" in row:
+                    row["current_executions_list"] = _parse_pg_array(
+                        row["current_executions_list"]
+                    )
+
             return result
         except Exception as e:
             print(f"Error fetching underwriting processors: {e}")
             return []
 
     def update_current_executions_list(
-        self,
-        underwriting_processor_id: str,
-        execution_ids: list[str]
+        self, underwriting_processor_id: str, execution_ids: list[str]
     ) -> bool:
         """
         Update the current executions list for an underwriting processor.
@@ -321,7 +325,9 @@ class ProcessorRepository:
         """
         try:
             cursor = self.db.cursor()
-            cursor.execute(query, (execution_ids, datetime.now(), underwriting_processor_id))
+            cursor.execute(
+                query, (execution_ids, datetime.now(), underwriting_processor_id)
+            )
             self.db.commit()
             return True
         except Exception as e:
@@ -333,10 +339,7 @@ class ProcessorRepository:
     # PROCESSOR CONFIGURATION HELPERS
     # =========================================================================
 
-    def get_effective_config(
-        self,
-        underwriting_processor_id: str
-    ) -> dict[str, Any]:
+    def get_effective_config(self, underwriting_processor_id: str) -> dict[str, Any]:
         """
         Get the effective configuration for an underwriting processor.
 
@@ -351,7 +354,9 @@ class ProcessorRepository:
         Returns:
             Merged configuration dictionary
         """
-        processor_record = self.get_underwriting_processor_by_id(underwriting_processor_id)
+        processor_record = self.get_underwriting_processor_by_id(
+            underwriting_processor_id
+        )
         if not processor_record:
             return {}
 
@@ -365,9 +370,7 @@ class ProcessorRepository:
         return config
 
     def get_processor_by_name(
-        self,
-        processor_name: str,
-        organization_id: str
+        self, processor_name: str, organization_id: str
     ) -> Optional[dict[str, Any]]:
         """
         Get a purchased processor by processor name and organization.
@@ -400,4 +403,3 @@ class ProcessorRepository:
         # TODO: Execute query with db connection
         # return self.db.execute(query, (processor_name, organization_id)).fetchone()
         return None
-
