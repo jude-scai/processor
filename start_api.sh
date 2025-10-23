@@ -10,6 +10,15 @@ echo ""
 # Activate virtual environment
 source .venv/bin/activate
 
+# Load environment variables from .env file if it exists
+if [ -f .env ]; then
+    echo "Loading environment variables from .env file..."
+    export $(grep -v '^#' .env | xargs)
+fi
+
+# Set default PostgreSQL password if not set
+export PGPASSWORD=${POSTGRES_PASSWORD:-aura_password}
+
 # Check if PostgreSQL is running
 echo "Checking PostgreSQL connection..."
 if psql -h localhost -U aura_user -d aura_underwriting -c "SELECT 1" > /dev/null 2>&1; then
