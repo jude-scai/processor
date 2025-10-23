@@ -301,6 +301,8 @@ class OrchestrationService:
             List of execution IDs to run, empty list if triggers matched but no new executions,
             or None if no triggers matched
         """
+        step_start = datetime.now()
+        
         # Get processor configuration
         processor_config = self.processor_repo.get_underwriting_processor_by_id(
             underwriting_processor_id
@@ -354,6 +356,35 @@ class OrchestrationService:
             execution_ids=execution_list
         )
         
+        # Log prepare_processor step
+        step_time = int((datetime.now() - step_start).total_seconds() * 1000)
+        if self.test_workflow_repo:
+            self.test_workflow_repo.log_stage(
+                underwriting_id=underwriting_data.get('id'),
+                workflow_name="Workflow 1",
+                stage="prepare_processor",
+                payload={
+                    "underwriting_processor_id": underwriting_processor_id,
+                    "processor_name": processor_name,
+                    "duplicate": duplicate
+                },
+                output={
+                    "payload_list": payload_list,
+                    "execution_list": execution_list,
+                    "new_executions": new_exe_list,
+                    "deleted_executions": del_exe_list,
+                    "result": "NULL" if (not new_exe_list and not del_exe_list) else "OK"
+                },
+                status="completed",
+                execution_time_ms=step_time,
+                metadata={
+                    "payloads_generated": len(payload_list),
+                    "executions_created": len(execution_list),
+                    "new_executions": len(new_exe_list),
+                    "deleted_executions": len(del_exe_list)
+                }
+            )
+        
         # Return only new executions
         return new_exe_list
     
@@ -381,6 +412,8 @@ class OrchestrationService:
         Returns:
             Execution ID (new or existing)
         """
+        step_start = datetime.now()
+        
         # Generate hash from payload
         import hashlib
         payload_str = json.dumps(payload, sort_keys=True)
@@ -412,6 +445,35 @@ class OrchestrationService:
             status='pending',
             updated_execution_id=existing['id'] if (existing and duplicate) else None
         )
+        
+        # Log generate_execution step
+        step_time = int((datetime.now() - step_start).total_seconds() * 1000)
+        action_taken = "reused_existing" if (existing and not duplicate) else ("duplicated" if duplicate else "created_new")
+        
+        if self.test_workflow_repo:
+            self.test_workflow_repo.log_stage(
+                underwriting_id=processor_config['underwriting_id'],
+                workflow_name="Workflow 1",
+                stage="generate_execution",
+                payload={
+                    "underwriting_processor_id": underwriting_processor_id,
+                    "payload": payload,
+                    "duplicate": duplicate
+                },
+                output={
+                    "execution_id": execution_id,
+                    "payload_hash": payload_hash,
+                    "action": action_taken,
+                    "updated_execution_id": existing['id'] if (existing and duplicate) else None
+                },
+                status="completed",
+                execution_time_ms=step_time,
+                metadata={
+                    "existing_found": existing is not None,
+                    "is_duplicate": duplicate,
+                    "processor": processor_config['processor']
+                }
+            )
         
         return execution_id
     
@@ -489,9 +551,11 @@ class OrchestrationService:
         Returns:
             Execution result
         """
+        step_start = datetime.now()
         execution_id = execution['id']
         processor_name = execution['processor']
         underwriting_processor_id = execution['underwriting_processor_id']
+        underwriting_id = execution['underwriting_id']
         
         print(f"      Running: {execution_id} ({processor_name})")
         
@@ -541,6 +605,32 @@ class OrchestrationService:
                 
                 print(f"      ✅ Completed: {execution_id}")
                 
+                # Log successful execution
+                step_time = int((datetime.now() - step_start).total_seconds() * 1000)
+                if self.test_workflow_repo:
+                    self.test_workflow_repo.log_stage(
+                        underwriting_id=underwriting_id,
+                        workflow_name="Workflow 1",
+                        stage="run_execution",
+                        payload={
+                            "execution_id": execution_id,
+                            "processor": processor_name,
+                            "underwriting_processor_id": underwriting_processor_id,
+                            "input_payload": execution['payload']
+                        },
+                        output={
+                            "result": "success",
+                            "output": result.output,
+                            "cost_cents": int(result.total_cost_cents)
+                        },
+                        status="completed",
+                        execution_time_ms=step_time,
+                        metadata={
+                            "processor": processor_name,
+                            "payload_hash": execution.get('payload_hash')
+                        }
+                    )
+                
                 return {
                     "success": True,
                     "execution_id": execution_id,
@@ -557,6 +647,32 @@ class OrchestrationService:
                 )
                 
                 print(f"      ❌ Failed: {execution_id} - {result.error_message}")
+                
+                # Log failed execution
+                step_time = int((datetime.now() - step_start).total_seconds() * 1000)
+                if self.test_workflow_repo:
+                    self.test_workflow_repo.log_stage(
+                        underwriting_id=underwriting_id,
+                        workflow_name="Workflow 1",
+                        stage="run_execution",
+                        payload={
+                            "execution_id": execution_id,
+                            "processor": processor_name,
+                            "underwriting_processor_id": underwriting_processor_id,
+                            "input_payload": execution['payload']
+                        },
+                        output={
+                            "result": "failed",
+                            "error": result.error_message
+                        },
+                        status="failed",
+                        execution_time_ms=step_time,
+                        error_message=result.error_message,
+                        metadata={
+                            "processor": processor_name,
+                            "payload_hash": execution.get('payload_hash')
+                        }
+                    )
                 
                 return {
                     "success": False,
@@ -575,6 +691,33 @@ class OrchestrationService:
             )
             
             print(f"      ❌ Exception: {execution_id} - {e}")
+            
+            # Log exception
+            step_time = int((datetime.now() - step_start).total_seconds() * 1000)
+            if self.test_workflow_repo:
+                self.test_workflow_repo.log_stage(
+                    underwriting_id=underwriting_id,
+                    workflow_name="Workflow 1",
+                    stage="run_execution",
+                    payload={
+                        "execution_id": execution_id,
+                        "processor": processor_name,
+                        "underwriting_processor_id": underwriting_processor_id,
+                        "input_payload": execution['payload']
+                    },
+                    output={
+                        "result": "exception",
+                        "error": str(e)
+                    },
+                    status="failed",
+                    execution_time_ms=step_time,
+                    error_message=str(e),
+                    metadata={
+                        "processor": processor_name,
+                        "exception_type": type(e).__name__,
+                        "payload_hash": execution.get('payload_hash')
+                    }
+                )
             
             return {
                 "success": False,
@@ -606,6 +749,7 @@ class OrchestrationService:
         results = []
         
         for underwriting_processor_id in processor_list:
+            step_start = datetime.now()
             print(f"  Consolidating: {underwriting_processor_id}")
             
             try:
@@ -639,6 +783,32 @@ class OrchestrationService:
                 
                 print(f"    ✅ Consolidated: {len(consolidated_factors)} factors")
                 
+                # Log consolidate_processor step
+                step_time = int((datetime.now() - step_start).total_seconds() * 1000)
+                if self.test_workflow_repo:
+                    self.test_workflow_repo.log_stage(
+                        underwriting_id=processor_config['underwriting_id'],
+                        workflow_name="Workflow 1",
+                        stage="consolidate_processor",
+                        payload={
+                            "underwriting_processor_id": underwriting_processor_id,
+                            "processor": processor_name,
+                            "active_execution_count": len(active_executions)
+                        },
+                        output={
+                            "result": "success",
+                            "factors": consolidated_factors,
+                            "factor_count": len(consolidated_factors)
+                        },
+                        status="completed",
+                        execution_time_ms=step_time,
+                        metadata={
+                            "processor": processor_name,
+                            "executions_used": len(active_executions),
+                            "execution_ids": [ex['id'] for ex in active_executions]
+                        }
+                    )
+                
                 results.append({
                     "success": True,
                     "underwriting_processor_id": underwriting_processor_id,
@@ -653,6 +823,30 @@ class OrchestrationService:
                 
             except Exception as e:
                 print(f"    ❌ Consolidation failed: {e}")
+                
+                # Log consolidation error
+                step_time = int((datetime.now() - step_start).total_seconds() * 1000)
+                if self.test_workflow_repo and processor_config:
+                    self.test_workflow_repo.log_stage(
+                        underwriting_id=processor_config.get('underwriting_id'),
+                        workflow_name="Workflow 1",
+                        stage="consolidate_processor",
+                        payload={
+                            "underwriting_processor_id": underwriting_processor_id,
+                            "processor": processor_config.get('processor', 'unknown')
+                        },
+                        output={
+                            "result": "error",
+                            "error": str(e)
+                        },
+                        status="failed",
+                        execution_time_ms=step_time,
+                        error_message=str(e),
+                        metadata={
+                            "exception_type": type(e).__name__
+                        }
+                    )
+                
                 results.append({
                     "success": False,
                     "underwriting_processor_id": underwriting_processor_id,
