@@ -11,4 +11,3 @@ __all__ = [
     "generate_payload_hash",
     "format_payload_list",
 ]
-
