@@ -155,7 +155,7 @@ class ProcessorRepository:
             up.id,
             up.organization_id,
             up.underwriting_id,
-            up.purchased_processor_id,
+            up.organization_processor_id,
             up.processor,
             up.name,
             up.auto,
@@ -163,16 +163,30 @@ class ProcessorRepository:
             up.config_override,
             up.effective_config,
             up.current_executions_list,
-            pp.config as purchased_config,
-            pp.price_amount,
-            pp.price_unit
+            op.config as organization_config,
+            op.price_amount,
+            op.price_unit
         FROM underwriting_processors up
-        LEFT JOIN purchased_processors pp ON up.purchased_processor_id = pp.id
-        WHERE up.id = %s AND up.enabled = true
+        LEFT JOIN organization_processors op ON up.organization_processor_id = op.id
+        WHERE up.id = %s
         """
-        # TODO: Execute query with db connection
-        # return self.db.execute(query, (underwriting_processor_id,)).fetchone()
-        return None
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (underwriting_processor_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                # If using RealDictCursor, row is already dict-like
+                if hasattr(row, 'keys'):
+                    return dict(row)
+                else:
+                    # Regular tuple row, need to convert
+                    columns = [desc[0] for desc in cursor.description]
+                    return dict(zip(columns, row))
+            return None
+        except Exception as e:
+            print(f"Error fetching underwriting processor: {e}")
+            return None
 
     def get_underwriting_processors(
         self,
@@ -196,7 +210,7 @@ class ProcessorRepository:
             up.id,
             up.organization_id,
             up.underwriting_id,
-            up.purchased_processor_id,
+            up.organization_processor_id,
             up.processor,
             up.name,
             up.auto,
@@ -204,11 +218,11 @@ class ProcessorRepository:
             up.config_override,
             up.effective_config,
             up.current_executions_list,
-            pp.config as purchased_config,
-            pp.price_amount,
-            pp.price_unit
+            op.config as organization_config,
+            op.price_amount,
+            op.price_unit
         FROM underwriting_processors up
-        LEFT JOIN purchased_processors pp ON up.purchased_processor_id = pp.id
+        LEFT JOIN organization_processors op ON up.organization_processor_id = op.id
         WHERE up.underwriting_id = %s
         """
 
@@ -223,9 +237,26 @@ class ProcessorRepository:
 
         query += " ORDER BY up.created_at"
 
-        # TODO: Execute query with db connection
-        # return self.db.execute(query, (underwriting_id,)).fetchall()
-        return []
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (underwriting_id,))
+            rows = cursor.fetchall()
+            
+            # If using RealDictCursor, rows are already dict-like
+            # Otherwise, convert them
+            result = []
+            if rows and hasattr(rows[0], 'keys'):
+                # RealDictRow or similar dict-like object
+                result = [dict(row) for row in rows]
+            else:
+                # Regular tuple rows, need to convert
+                columns = [desc[0] for desc in cursor.description]
+                result = [dict(zip(columns, row)) for row in rows]
+            
+            return result
+        except Exception as e:
+            print(f"Error fetching underwriting processors: {e}")
+            return []
 
     def update_current_executions_list(
         self,
@@ -249,10 +280,15 @@ class ProcessorRepository:
             updated_at = %s
         WHERE id = %s
         """
-        # TODO: Execute update with db connection
-        # self.db.execute(query, (execution_ids, datetime.utcnow(), underwriting_processor_id))
-        # return True
-        return False
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (execution_ids, datetime.now(), underwriting_processor_id))
+            self.db.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating current executions list: {e}")
+            self.db.rollback()
+            return False
 
     # =========================================================================
     # PROCESSOR CONFIGURATION HELPERS

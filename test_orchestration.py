@@ -35,14 +35,14 @@ def test_workflow1():
     # Create orchestration service
     orchestrator = create_orchestration_service(conn)
     
-    # Register test processor
+    # Register test processor (must match processor name in database)
     orchestrator.register_processor(
-        processor_name="p_test_application",
+        processor_name="p_application",
         processor_class=ApplicationProcessor
     )
     
     print("✅ Orchestration service created")
-    print("✅ ApplicationProcessor registered")
+    print("✅ ApplicationProcessor registered (p_application)")
     print()
     
     # Get existing underwriting ID

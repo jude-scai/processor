@@ -416,7 +416,18 @@ class OrchestrationService:
         
         # Generate hash from payload
         import hashlib
-        payload_str = json.dumps(payload, sort_keys=True)
+        
+        # Custom JSON encoder to handle datetime and Decimal objects
+        from decimal import Decimal
+        def json_serial(obj):
+            """JSON serializer for objects not serializable by default json code"""
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            if isinstance(obj, Decimal):
+                return float(obj)
+            raise TypeError(f"Type {type(obj)} not serializable")
+        
+        payload_str = json.dumps(payload, sort_keys=True, default=json_serial)
         payload_hash = hashlib.sha256(payload_str.encode()).hexdigest()
         
         # Find existing execution with same hash
@@ -439,11 +450,9 @@ class OrchestrationService:
             underwriting_id=processor_config['underwriting_id'],
             underwriting_processor_id=underwriting_processor_id,
             organization_id=processor_config['organization_id'],
-            processor=processor_config['processor'],
+            processor_name=processor_config['processor'],
             payload=payload,
-            payload_hash=payload_hash,
-            status='pending',
-            updated_execution_id=existing['id'] if (existing and duplicate) else None
+            payload_hash=payload_hash
         )
         
         # Log generate_execution step

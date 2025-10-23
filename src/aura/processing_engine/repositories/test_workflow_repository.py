@@ -194,6 +194,17 @@ class TestWorkflowRepository:
     
     def _generate_hash(self, payload: dict[str, Any]) -> str:
         """Generate hash from payload for deduplication tracking."""
-        payload_str = json.dumps(payload, sort_keys=True)
+        from decimal import Decimal
+        from datetime import datetime
+        
+        def json_serial(obj):
+            """JSON serializer for objects not serializable by default."""
+            if isinstance(obj, datetime):
+                return obj.isoformat()
+            if isinstance(obj, Decimal):
+                return float(obj)
+            return str(obj)  # Fallback for any other type
+        
+        payload_str = json.dumps(payload, sort_keys=True, default=json_serial)
         return hashlib.sha256(payload_str.encode()).hexdigest()[:16]  # Short hash for readability
 
