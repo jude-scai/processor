@@ -83,19 +83,48 @@ class ApplicationProcessor(BaseProcessor):
 
     def extract(self, validated_data: dict[str, Any]) -> dict[str, Any]:
         """
-        Extract factors from application form data.
+        Extract and structure application form data with field-value pairs.
+        Returns structured data that represents what would be filled in the application form.
         """
-        # Extract basic business information
+        # Build application form field structure with dot notation
+        application_form_fields = {
+            "merchant.name": validated_data.get("merchant_name"),
+            "merchant.ein": validated_data.get("merchant_ein"),
+            "merchant.industry": validated_data.get("merchant_industry"),
+            "merchant.state_of_incorporation": validated_data.get("merchant_state"),
+            "merchant.entity_type": validated_data.get("merchant_entity_type"),
+        }
+
+        # Build owners list structure
+        # Include owner_id for matching existing records vs new records
+        owners_list = []
+        for owner in validated_data.get("owners", []):
+            owner_data = {
+                "owner_id": owner.get("owner_id"),  # If present, UPDATE; if None, INSERT
+                "first_name": owner.get("first_name"),
+                "last_name": owner.get("last_name"),
+                "primary_owner": owner.get("primary_owner", False),
+                "email": owner.get("email"),
+                "phone_mobile": owner.get("phone_mobile"),
+                "ssn": owner.get("ssn"),
+                "ownership_percent": owner.get("ownership_percent"),
+            }
+            owners_list.append(owner_data)
+
+        # Structure the output as it would appear in the database/application form
         output = {
+            "application_form": application_form_fields,
+            "owners_list": owners_list,
+            # Summary/derived fields for convenience
             "business_name": validated_data.get("merchant_name"),
             "business_ein": validated_data.get("merchant_ein"),
             "business_industry": validated_data.get("merchant_industry"),
             "business_state": validated_data.get("merchant_state"),
             "business_entity_type": validated_data.get("merchant_entity_type"),
-            "owner_count": len(validated_data.get("owners", [])),
+            "owner_count": len(owners_list),
             "has_primary_owner": any(
                 owner.get("primary_owner", False)
-                for owner in validated_data.get("owners", [])
+                for owner in owners_list
             ),
         }
 
