@@ -10,6 +10,10 @@ from .orchestrator import Orchestrator, create_orchestrator
 from .filtration import filtration, prepare_processor, generate_execution
 from .execution import execution, run_single_execution
 from .consolidation import consolidation
+from .registry import (
+    Registry,
+    get_registry,
+)
 
 __all__ = [
     "Orchestrator",
@@ -20,5 +24,6 @@ __all__ = [
     "execution",
     "run_single_execution",
     "consolidation",
+    "Registry",
+    "get_registry",
 ]
-
