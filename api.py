@@ -217,61 +217,19 @@ def get_underwriting(underwriting_id: str):
 
 @app.post("/trigger/workflow1")
 def trigger_workflow1(request: TriggerWorkflow1Request):
-    """
-    Trigger Workflow 1 - Automatic processor execution (underwriting.updated).
-
-    This endpoint directly executes the workflow and logs to test_workflow table.
-    """
+    """Trigger Workflow 1 - Automatic processor execution (underwriting.updated)."""
     try:
-        # Import orchestrator service and test processors
-        from aura.processing_engine.services.orchestrator import (
-            create_orchestrator,
+        message_id = publish_message(
+            topic_name="underwriting.updated",
+            data={"underwriting_id": request.underwriting_id},
         )
-        from aura.processing_engine.processors.test.test_application_processor import (
-            TestApplicationProcessor,
-        )
-        from aura.processing_engine.processors.test.test_document_processor import (
-            TestDocumentProcessor,
-        )
-        from aura.processing_engine.processors.test.test_stipulation_processor import (
-            TestStipulationProcessor,
-        )
-
-        # Create orchestrator with test tracking enabled
-        conn = get_db_connection()
-        service = create_orchestrator(conn, enable_test_tracking=True)
-
-        # Register test processors
-        service.register_processor(TestApplicationProcessor)
-        service.register_processor(TestDocumentProcessor)
-        service.register_processor(TestStipulationProcessor)
-
-        # Execute workflow
-        result = service.handle_workflow1(request.underwriting_id)
-
-        # Close connection
-        conn.close()
-
-        # Also publish to Pub/Sub for any subscribers
-        try:
-            message_id = publish_message(
-                topic_name="underwriting.updated",
-                data={"underwriting_id": request.underwriting_id},
-            )
-        except Exception as pub_error:
-            message_id = f"pub_error: {str(pub_error)}"
 
         return {
-            "success": result.get("success", False),
+            "success": True,
             "workflow": "Workflow 1 - Automatic Execution",
-            "underwriting_id": request.underwriting_id,
-            "processors_selected": result.get("processors_selected", 0),
-            "executions_run": result.get("executions_run", 0),
-            "executions_failed": result.get("executions_failed", 0),
-            "processors_consolidated": result.get("processors_consolidated", 0),
-            "message": result.get("message", "Workflow completed"),
-            "pubsub_message_id": message_id,
-            "test_workflow_logged": True,
+            "topic": "underwriting.updated",
+            "message_id": message_id,
+            "payload": {"underwriting_id": request.underwriting_id},
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
