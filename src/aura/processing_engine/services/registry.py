@@ -57,7 +57,7 @@ class Registry:
         self._registry[processor_name] = processor_class
         print(f"✅ Registered processor: {processor_name}")
 
-    def get_processor_class(self, processor_name: str) -> Type[BaseProcessor]:
+    def get_processor(self, processor_name: str) -> Type[BaseProcessor]:
         """
         Retrieve a registered processor class by its name.
 
