@@ -21,7 +21,7 @@ from psycopg2.extras import RealDictCursor
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-from aura.processing_engine.services.orchestrator import create_orchestrator
+from src.aura.processing_engine.services.orchestrator import create_orchestrator
 
 # Pub/Sub configuration
 os.environ["PUBSUB_EMULATOR_HOST"] = "localhost:8085"
@@ -85,7 +85,7 @@ def handle_underwriting_updated(message):
 
         # Create orchestrator and execute workflow
         conn = get_db_connection()
-        orchestrator = create_orchestrator(conn, enable_test_tracking=True)
+        orchestrator = create_orchestrator(conn)
         result = orchestrator.handle_workflow1(underwriting_id)
         conn.close()
 
@@ -134,7 +134,7 @@ def handle_document_analyzed(message):
 
         # Create orchestrator and execute workflow
         conn = get_db_connection()
-        orchestrator = create_orchestrator(conn, enable_test_tracking=True)
+        orchestrator = create_orchestrator(conn)
         result = orchestrator.handle_workflow1(underwriting_id)
         conn.close()
 
