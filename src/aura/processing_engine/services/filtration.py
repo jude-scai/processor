@@ -10,7 +10,6 @@ from ..repositories import (
     UnderwritingRepository,
     ProcessorRepository,
     ExecutionRepository,
-    TestWorkflowRepository,
 )
 from ..utils.payload import format_payload_list as format_payload_list_util
 from ..utils.hashing import generate_payload_hash
@@ -111,7 +110,6 @@ def prepare_processor(
         List of execution IDs to run, empty list if triggers matched but no new executions,
         or None if no triggers matched
     """
-    test_workflow_repo = TestWorkflowRepository()
 
     registry = get_registry()
     processor_class = registry.get_processor(processor_config["processor"])
@@ -120,9 +118,31 @@ def prepare_processor(
         processor_triggers=processor_class.PROCESSOR_TRIGGERS,
         underwriting_data=underwriting_data,
     )
+    print(f"    ℹ️  Payload list: {payload_list}")
+
+    if payload_list is None:
+        return None
 
     if not payload_list:
-        return None
+        # Check if there are existing executions to remove
+        current_executions = ExecutionRepository().get_active_executions(
+            underwriting_processor_id
+        )
+        current_execution_ids = [ex["id"] for ex in current_executions]
+        
+        if current_execution_ids:
+            # Remove existing executions since no new ones are needed
+            ProcessorRepository().update_current_executions_list(
+                underwriting_processor_id=underwriting_processor_id,
+                execution_ids=[],  # Empty list removes all current executions
+            )
+            print(f"    ℹ️  Removing {len(current_execution_ids)} existing executions")
+        
+        # Return empty list to include in processor_list but skip execution
+        # This means: triggers are configured but no data is available
+        return []
+
+    print(f"    ℹ️  Generating {len(payload_list)} executions")
 
     execution_list = [
         generate_execution(
@@ -144,6 +164,10 @@ def prepare_processor(
     new_exe_list = [eid for eid in execution_list if eid not in current_execution_ids]
     del_exe_list = [eid for eid in current_execution_ids if eid not in execution_list]
 
+    print(f"    ℹ️  Existing execution list: {current_execution_ids}")
+    print(f"    ℹ️  New execution list: {new_exe_list}")
+    print(f"    ℹ️  Deleted execution list: {del_exe_list}")
+
     if not new_exe_list and not del_exe_list:
         return []
 
@@ -152,29 +176,6 @@ def prepare_processor(
         execution_ids=execution_list,
     )
 
-    test_workflow_repo.log_stage(
-        underwriting_id=underwriting_data.get("id"),
-        workflow_name="Workflow 1",
-        stage="filtration (prepare_processor)",
-        payload={
-            "underwriting_processor_id": underwriting_processor_id,
-            "processor_name": processor_config["processor"],
-            "duplicate": duplicate,
-        },
-        input={
-            "processor_config": {
-                "processor": processor_config["processor"],
-                "enabled": processor_config.get("enabled"),
-                "auto": processor_config.get("auto"),
-            },
-            "payload_list": payload_list,
-        },
-        output={
-            "new_executions": new_exe_list,
-            "deleted_executions": del_exe_list,
-        },
-        status="completed",
-    )
 
     return new_exe_list
 
@@ -207,7 +208,6 @@ def generate_execution(
         Execution ID (new or existing)
     """
     execution_repo = ExecutionRepository()
-    test_workflow_repo = TestWorkflowRepository()
 
     payload_hash = generate_payload_hash(payload, processor_triggers)
 
@@ -217,25 +217,6 @@ def generate_execution(
 
     if existing and not duplicate:
         execution_id = existing["id"]
-        test_workflow_repo.log_stage(
-            underwriting_id=processor_config.get("underwriting_id"),
-            workflow_name="Workflow 1",
-            stage="filtration (generate_execution)",
-            payload={
-                "underwriting_processor_id": underwriting_processor_id,
-                "payload": payload,
-                "duplicate": duplicate,
-            },
-            input={
-                "payload_hash": payload_hash,
-                "processor_config": processor_config,
-            },
-            output={
-                "execution_id": execution_id,
-                "action": "reused_existing",
-            },
-            status="completed",
-        )
         return execution_id
 
     execution_id = execution_repo.create_execution(
@@ -251,24 +232,5 @@ def generate_execution(
         payload_hash=payload_hash,
     )
 
-    test_workflow_repo.log_stage(
-        underwriting_id=processor_config.get("underwriting_id"),
-        workflow_name="Workflow 1",
-        stage="filtration (generate_execution)",
-        payload={
-            "underwriting_processor_id": underwriting_processor_id,
-            "payload": payload,
-            "duplicate": duplicate,
-        },
-        input={
-            "payload_hash": payload_hash,
-            "processor_config": processor_config,
-        },
-        output={
-            "execution_id": execution_id,
-            "action": "created_new",
-        },
-        status="completed",
-    )
 
     return execution_id
