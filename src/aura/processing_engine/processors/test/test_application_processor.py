@@ -169,4 +169,3 @@ class TestApplicationProcessor(BaseProcessor):
             return False, f"Missing required fields: {', '.join(missing_fields)}"
 
         return True, None
-

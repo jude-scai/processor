@@ -20,7 +20,11 @@ from google.auth.credentials import AnonymousCredentials
 import json
 import os
 
-from aura.processing_engine.repositories import UnderwritingRepository, ProcessorRepository, ExecutionRepository
+from aura.processing_engine.repositories import (
+    UnderwritingRepository,
+    ProcessorRepository,
+    ExecutionRepository,
+)
 from aura.processing_engine.services import create_orchestrator
 
 # Pub/Sub configuration
@@ -358,7 +362,9 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     import uvicorn
-    print("""
+
+    print(
+        """
     🚀 Starting AURA API Server
     =========================
 

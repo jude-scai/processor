@@ -3,6 +3,7 @@ Tests for Processor Registry
 
 Tests the singleton registry pattern, processor registration, and auto-discovery.
 """
+
 # pylint: disable=redefined-outer-name  # pytest fixtures
 
 import sys
@@ -13,9 +14,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "src"
 
 import pytest  # pylint: disable=import-error
 
-from aura.processing_engine.services.registry import Registry, get_registry  # pylint: disable=import-error,wrong-import-position
-from aura.processing_engine.base_processor import BaseProcessor, ProcessorType  # pylint: disable=import-error,wrong-import-position
-from aura.processing_engine.models import ExecutionPayload, ValidationResult  # pylint: disable=import-error,wrong-import-position
+from aura.processing_engine.services.registry import (
+    Registry,
+    get_registry,
+)  # pylint: disable=import-error,wrong-import-position
+from aura.processing_engine.base_processor import (
+    BaseProcessor,
+    ProcessorType,
+)  # pylint: disable=import-error,wrong-import-position
+from aura.processing_engine.models import (
+    ExecutionPayload,
+    ValidationResult,
+)  # pylint: disable=import-error,wrong-import-position
 
 
 class MockProcessor(BaseProcessor):
@@ -146,7 +156,7 @@ class TestRegistry:
         if len(processors) == 0:
             # Registry was cleared - auto-discovery already happened on initial import
             # Just verify the mechanism works by checking the code path exists
-            assert hasattr(registry, 'register_processor')
+            assert hasattr(registry, "register_processor")
         else:
             # Test processors should be auto-registered
             # Note: This depends on whether registry was cleared by previous tests
@@ -165,4 +175,3 @@ class TestRegistry:
         captured = capsys.readouterr()
         assert "already registered" in captured.out.lower()
         assert "Overwriting" in captured.out
-

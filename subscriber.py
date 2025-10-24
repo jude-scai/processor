@@ -90,15 +90,22 @@ def handle_underwriting_updated(message):
         conn.close()
 
         print(f"\n✅ Workflow 1 completed", flush=True)
-        print(f"   Processors selected: {result.get('processors_selected', 0)}", flush=True)
+        print(
+            f"   Processors selected: {result.get('processors_selected', 0)}",
+            flush=True,
+        )
         print(f"   Executions run: {result.get('executions_run', 0)}", flush=True)
         print(f"   Executions failed: {result.get('executions_failed', 0)}", flush=True)
-        print(f"   Processors consolidated: {result.get('processors_consolidated', 0)}", flush=True)
+        print(
+            f"   Processors consolidated: {result.get('processors_consolidated', 0)}",
+            flush=True,
+        )
 
         message.ack()
     except Exception as e:
         print(f"\n❌ Error processing underwriting.updated: {e}", flush=True)
         import traceback
+
         traceback.print_exc()
 
         # Determine if error is transient or permanent
@@ -144,6 +151,7 @@ def handle_document_analyzed(message):
     except Exception as e:
         print(f"\n❌ Error processing document.analyzed: {e}", flush=True)
         import traceback
+
         traceback.print_exc()
 
         # Determine if error is transient or permanent
@@ -185,7 +193,10 @@ def handle_underwriting_processor_execute(message):
 
         # Validate required parameter
         if not underwriting_processor_id:
-            print("   ❌ Missing required parameter: underwriting_processor_id", flush=True)
+            print(
+                "   ❌ Missing required parameter: underwriting_processor_id",
+                flush=True,
+            )
             message.ack()
             return
 
@@ -209,6 +220,7 @@ def handle_underwriting_processor_execute(message):
     except Exception as e:
         print(f"\n❌ Error processing underwriting.processor.execute: {e}", flush=True)
         import traceback
+
         traceback.print_exc()
 
         # Determine if error is transient or permanent
@@ -253,8 +265,12 @@ def handle_underwriting_processor_consolidation(message):
 
         message.ack()
     except Exception as e:
-        print(f"\n❌ Error processing underwriting.processor.consolidation: {e}", flush=True)
+        print(
+            f"\n❌ Error processing underwriting.processor.consolidation: {e}",
+            flush=True,
+        )
         import traceback
+
         traceback.print_exc()
 
         # Determine if error is transient or permanent
@@ -279,7 +295,8 @@ def handle_underwriting_processor_consolidation(message):
 
 def main():
     """Start Pub/Sub subscriber."""
-    print("""
+    print(
+        """
     ╔══════════════════════════════════════════════════════════════════════╗
     ║              AURA Pub/Sub Subscriber - Workflow Orchestrator         ║
     ╚══════════════════════════════════════════════════════════════════════╝
@@ -292,7 +309,9 @@ def main():
       - underwriting.processor.consolidation (Workflow 3)
 
     Press Ctrl+C to stop...
-    """, flush=True)
+    """,
+        flush=True,
+    )
 
     # Create publisher and subscriber clients
     publisher = pubsub_v1.PublisherClient(credentials=AnonymousCredentials())
@@ -310,7 +329,9 @@ def main():
     subscription_futures = []
     for topic_name, callback in topics.items():
         topic_path = f"projects/{PUBSUB_PROJECT}/topics/{topic_name}"
-        subscription_path = f"projects/{PUBSUB_PROJECT}/subscriptions/{topic_name}-orchestrator-sub"
+        subscription_path = (
+            f"projects/{PUBSUB_PROJECT}/subscriptions/{topic_name}-orchestrator-sub"
+        )
 
         print(f"\nSetting up topic: {topic_name}", flush=True)
 
@@ -395,7 +416,8 @@ class SubscriberReloader(FileSystemEventHandler):
 
 def main_with_reload():
     """Start subscriber with auto-reload."""
-    print("""
+    print(
+        """
     ╔══════════════════════════════════════════════════════════════════════╗
     ║          AURA Pub/Sub Subscriber - Auto-Reload Mode                  ║
     ╚══════════════════════════════════════════════════════════════════════╝
@@ -403,7 +425,9 @@ def main_with_reload():
     Watching for file changes in: src/aura/processing_engine/
     Press Ctrl+C to stop...
 
-    """, flush=True)
+    """,
+        flush=True,
+    )
 
     # Create event handler and observer
     event_handler = SubscriberReloader()
@@ -431,4 +455,3 @@ if __name__ == "__main__":
         main_with_reload()
     else:
         main()
-

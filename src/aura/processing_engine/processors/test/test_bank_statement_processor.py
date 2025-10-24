@@ -73,7 +73,9 @@ class TestBankStatementProcessor(BaseProcessor):
         document_count = transformed_data.get("document_count", 0)
         minimum_document = self.CONFIG.get("minimum_document", 3)
         if document_count < minimum_document:
-            errors.append(f"Minimum {minimum_document} bank statements required, got {document_count}")
+            errors.append(
+                f"Minimum {minimum_document} bank statements required, got {document_count}"
+            )
 
         return ValidationResult(is_valid=len(errors) == 0, errors=errors)
 
@@ -181,8 +183,9 @@ class TestBankStatementProcessor(BaseProcessor):
         document_count = len(revision_ids)
         minimum_document = 3  # From CONFIG
         if document_count < minimum_document:
-            return False, f"Minimum {minimum_document} bank statements required, got {document_count}"
+            return (
+                False,
+                f"Minimum {minimum_document} bank statements required, got {document_count}",
+            )
 
         return True, None
-
-

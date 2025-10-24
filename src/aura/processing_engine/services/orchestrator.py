@@ -153,7 +153,14 @@ class Orchestrator:
             },
         }
 
-    def handle_workflow2(self, underwriting_processor_id: str, execution_id: str = None, duplicate: bool = False, application_form: dict = None, document_list: list = None) -> dict[str, Any]:
+    def handle_workflow2(
+        self,
+        underwriting_processor_id: str,
+        execution_id: str = None,
+        duplicate: bool = False,
+        application_form: dict = None,
+        document_list: list = None,
+    ) -> dict[str, Any]:
         """
         Handle Workflow 2: Manual processor execution.
 
@@ -198,10 +205,14 @@ class Orchestrator:
                 underwriting_processor_id
             )
             if not processor_config:
-                raise ValueError(f"Underwriting processor not found: {underwriting_processor_id}")
+                raise ValueError(
+                    f"Underwriting processor not found: {underwriting_processor_id}"
+                )
 
             underwriting_id = processor_config["underwriting_id"]
-            underwriting_data = self.underwriting_repo.get_underwriting_with_details(underwriting_id)
+            underwriting_data = self.underwriting_repo.get_underwriting_with_details(
+                underwriting_id
+            )
             if not underwriting_data:
                 raise ValueError(f"Underwriting not found: {underwriting_id}")
 
@@ -211,7 +222,9 @@ class Orchestrator:
             if execution_id:
                 # Scenario 1: Rerun specific execution
                 results["scenario"] = "Scenario 1: Rerun specific execution"
-                existing_execution = self.execution_repo.get_execution_by_id(execution_id)
+                existing_execution = self.execution_repo.get_execution_by_id(
+                    execution_id
+                )
                 if not existing_execution:
                     raise ValueError(f"Execution not found: {execution_id}")
 
@@ -219,22 +232,28 @@ class Orchestrator:
                 if duplicate:
                     new_execution_id = self.execution_repo.create_execution(
                         underwriting_id=existing_execution["underwriting_id"],
-                        underwriting_processor_id=existing_execution["underwriting_processor_id"],
+                        underwriting_processor_id=existing_execution[
+                            "underwriting_processor_id"
+                        ],
                         organization_id=existing_execution["organization_id"],
                         processor_name=existing_execution["processor"],
                         payload=existing_execution["payload"],
-                        payload_hash=existing_execution["payload_hash"]
+                        payload_hash=existing_execution["payload_hash"],
                     )
                     execution_list_to_run.append(new_execution_id)
                     # Mark the old execution as superseded
-                    self.execution_repo.mark_execution_superseded(existing_execution["id"], new_execution_id)
+                    self.execution_repo.mark_execution_superseded(
+                        existing_execution["id"], new_execution_id
+                    )
                     print(f"    🔄 EXECUTION SUPERSEDED (Scenario 1)")
                     print(f"        OLD EXECUTION: {existing_execution['id']}")
                     print(f"        NEW EXECUTION: {new_execution_id}")
                 else:
                     execution_list_to_run.append(execution_id)
                     # Ensure the execution is marked as pending/failed to be rerun
-                    self.execution_repo.update_execution_status(execution_id, status="pending")
+                    self.execution_repo.update_execution_status(
+                        execution_id, status="pending"
+                    )
 
             elif application_form or document_list:
                 # Scenario 3: Selective data execution
@@ -243,18 +262,29 @@ class Orchestrator:
                 temp_payload = {
                     "underwriting_id": underwriting_id,
                     "underwriting_processor_id": underwriting_processor_id,
-                    "application_form": application_form if application_form else underwriting_data.get("application_form", {}),
+                    "application_form": (
+                        application_form
+                        if application_form
+                        else underwriting_data.get("application_form", {})
+                    ),
                     "owners_list": underwriting_data.get("owners", []),
-                    "documents_list": document_list if document_list else underwriting_data.get("documents", []),
+                    "documents_list": (
+                        document_list
+                        if document_list
+                        else underwriting_data.get("documents", [])
+                    ),
                 }
                 # Generate a new execution based on this selective data
                 from .filtration import generate_execution
                 from ..models import ExecutionPayload
+
                 new_execution_id = generate_execution(
                     underwriting_processor_id=underwriting_processor_id,
                     payload=ExecutionPayload(**temp_payload),
                     processor_config=processor_config,
-                    processor_triggers=self.processor_repo.get_processor_triggers(processor_config["processor"]),
+                    processor_triggers=self.processor_repo.get_processor_triggers(
+                        processor_config["processor"]
+                    ),
                     duplicate=duplicate,
                 )
                 execution_list_to_run.append(new_execution_id)
@@ -265,10 +295,13 @@ class Orchestrator:
                 # If duplicate=True, get current active executions BEFORE creating new ones
                 current_executions = []
                 if duplicate:
-                    current_executions = self.execution_repo.get_active_executions(underwriting_processor_id)
+                    current_executions = self.execution_repo.get_active_executions(
+                        underwriting_processor_id
+                    )
 
                 # Use prepare_processor to get all relevant executions for this processor
                 from .filtration import prepare_processor
+
                 prepared_executions = prepare_processor(
                     underwriting_processor_id=underwriting_processor_id,
                     underwriting_data=underwriting_data,
@@ -281,16 +314,24 @@ class Orchestrator:
                     # If duplicate=True, supersede old executions with matching payload hash
                     if duplicate and current_executions and prepared_executions:
                         for new_exec_id in prepared_executions:
-                            new_exec = self.execution_repo.get_execution_by_id(new_exec_id)
-                            if new_exec and new_exec.get('payload_hash'):
-                                new_payload_hash = new_exec['payload_hash']
+                            new_exec = self.execution_repo.get_execution_by_id(
+                                new_exec_id
+                            )
+                            if new_exec and new_exec.get("payload_hash"):
+                                new_payload_hash = new_exec["payload_hash"]
 
                                 # Find old execution with same payload hash
                                 for old_exec in current_executions:
-                                    if old_exec.get('payload_hash') == new_payload_hash:
-                                        self.execution_repo.mark_execution_superseded(old_exec['id'], new_exec_id)
-                                        print(f"    🔄 EXECUTION SUPERSEDED (Scenario 2)")
-                                        print(f"        OLD EXECUTION: {old_exec['id']}")
+                                    if old_exec.get("payload_hash") == new_payload_hash:
+                                        self.execution_repo.mark_execution_superseded(
+                                            old_exec["id"], new_exec_id
+                                        )
+                                        print(
+                                            f"    🔄 EXECUTION SUPERSEDED (Scenario 2)"
+                                        )
+                                        print(
+                                            f"        OLD EXECUTION: {old_exec['id']}"
+                                        )
                                         print(f"        NEW EXECUTION: {new_exec_id}")
                                         break  # Only supersede the first match
 
@@ -312,7 +353,9 @@ class Orchestrator:
                 processor_list=processor_list_to_consolidate,
             )
             results["processors_consolidated"] = consolidation_result["consolidated"]
-            results["details"]["consolidation_results"] = consolidation_result["results"]
+            results["details"]["consolidation_results"] = consolidation_result[
+                "results"
+            ]
 
             results["success"] = True
 
@@ -321,6 +364,7 @@ class Orchestrator:
             results["error"] = str(e)
             print(f"❌ Workflow 2 Error: {str(e)}")
             import traceback
+
             traceback.print_exc()
 
         print("=" * 70)
@@ -367,7 +411,9 @@ class Orchestrator:
                 underwriting_processor_id
             )
             if not processor_config:
-                raise ValueError(f"Underwriting processor not found: {underwriting_processor_id}")
+                raise ValueError(
+                    f"Underwriting processor not found: {underwriting_processor_id}"
+                )
 
             underwriting_id = processor_config["underwriting_id"]
             processor_list_to_consolidate = [underwriting_processor_id]
@@ -377,7 +423,9 @@ class Orchestrator:
                 processor_list=processor_list_to_consolidate,
             )
             results["processors_consolidated"] = consolidation_result["consolidated"]
-            results["details"]["consolidation_results"] = consolidation_result["results"]
+            results["details"]["consolidation_results"] = consolidation_result[
+                "results"
+            ]
 
             results["success"] = True
 
@@ -396,9 +444,7 @@ class Orchestrator:
         }
 
 
-def create_orchestrator(
-    db_connection: Any
-) -> Orchestrator:
+def create_orchestrator(db_connection: Any) -> Orchestrator:
     """
     Create orchestrator with initialized repositories.
 

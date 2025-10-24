@@ -72,9 +72,7 @@ def filtration(
                         f"       Skipped {skipped_count} existing execution(s) (already completed)"
                     )
             else:
-                print(
-                    f"    ✅ Triggers matched, {len(preparation)} new execution(s)"
-                )
+                print(f"    ✅ Triggers matched, {len(preparation)} new execution(s)")
 
             processor_list.append(processor_config["id"])
             execution_list.extend(preparation)
@@ -129,7 +127,7 @@ def prepare_processor(
             underwriting_processor_id
         )
         current_execution_ids = [ex["id"] for ex in current_executions]
-        
+
         if current_execution_ids:
             # Remove existing executions since no new ones are needed
             ProcessorRepository().update_current_executions_list(
@@ -137,7 +135,7 @@ def prepare_processor(
                 execution_ids=[],  # Empty list removes all current executions
             )
             print(f"    ℹ️  Removing {len(current_execution_ids)} existing executions")
-        
+
         # Return empty list to include in processor_list but skip execution
         # This means: triggers are configured but no data is available
         return []
@@ -175,7 +173,6 @@ def prepare_processor(
         underwriting_processor_id=underwriting_processor_id,
         execution_ids=execution_list,
     )
-
 
     return new_exe_list
 
@@ -231,6 +228,5 @@ def generate_execution(
         payload=payload,
         payload_hash=payload_hash,
     )
-
 
     return execution_id

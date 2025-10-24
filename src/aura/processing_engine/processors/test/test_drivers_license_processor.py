@@ -194,4 +194,3 @@ class TestDriversLicenseProcessor(BaseProcessor):
         # For multiple drivers license executions, use the latest one
         # (document processors typically process one document at a time)
         return factors_delta_list[-1]
-

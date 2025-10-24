@@ -121,7 +121,9 @@ class TestPubSubSubscriber:
 
         # Cleanup
         try:
-            self.subscriber.delete_subscription(request={"subscription": subscription_path})
+            self.subscriber.delete_subscription(
+                request={"subscription": subscription_path}
+            )
         except Exception:
             pass
 
@@ -152,9 +154,7 @@ class TestPubSubSubscriber:
 
     def test_message_ack_deadline(self):
         """Test that subscriptions have proper ack deadline configured."""
-        subscription_path = (
-            f"projects/{PUBSUB_PROJECT}/subscriptions/underwriting.updated-orchestrator-sub"
-        )
+        subscription_path = f"projects/{PUBSUB_PROJECT}/subscriptions/underwriting.updated-orchestrator-sub"
 
         subscription = self.subscriber.get_subscription(
             request={"subscription": subscription_path}
@@ -163,4 +163,3 @@ class TestPubSubSubscriber:
         # Verify ack deadline is set (should be 60 seconds)
         assert subscription.ack_deadline_seconds >= 10
         assert subscription.ack_deadline_seconds <= 600
-

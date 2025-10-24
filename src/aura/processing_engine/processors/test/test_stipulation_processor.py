@@ -200,4 +200,3 @@ class TestStipulationProcessor(BaseProcessor):
             return False, "No documents available for stipulation type"
 
         return True, None
-

@@ -7,6 +7,7 @@ Tests the repository layer for database operations, including:
 - Status tracking and updates
 - Supersession relationships
 """
+
 # pylint: disable=redefined-outer-name,protected-access  # pytest fixtures, test access
 
 import sys
@@ -436,9 +437,7 @@ class TestHelperMethods:
 class TestRepositoryPatterns:
     """Test common repository usage patterns."""
 
-    def test_processor_config_resolution_pattern(
-        self, processor_repo
-    ):
+    def test_processor_config_resolution_pattern(self, processor_repo):
         """Test the pattern of resolving effective processor configuration."""
         # This tests the expected flow when implementation is complete
         # For now, it demonstrates the expected behavior

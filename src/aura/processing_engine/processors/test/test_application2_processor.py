@@ -17,9 +17,7 @@ class TestApplication2Processor(BaseProcessor):
 
     PROCESSOR_NAME = "p_test_application_2"
     PROCESSOR_TYPE = ProcessorType.APPLICATION
-    PROCESSOR_TRIGGERS = {
-        "application_form": [""]
-    }
+    PROCESSOR_TRIGGERS = {"application_form": [""]}
 
     def transform_input(self, payload: ExecutionPayload) -> dict[str, Any]:
         """

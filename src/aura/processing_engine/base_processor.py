@@ -169,7 +169,7 @@ class BaseProcessor(ABC):
         """
         if not factors_list:
             return {}
-        
+
         return factors_list[0]
 
     # =====================================================================

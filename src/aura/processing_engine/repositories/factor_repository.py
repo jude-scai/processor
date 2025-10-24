@@ -49,6 +49,7 @@ class FactorRepository:
     def _generate_uuid(self) -> str:
         """Generate a UUID string."""
         import uuid
+
         return str(uuid.uuid4())
 
     def save_factors(
@@ -100,18 +101,20 @@ class FactorRepository:
                       AND execution_id = %s
                       AND status = 'active'
                     """,
-                    (underwriting_id, factor_key, execution_id)
+                    (underwriting_id, factor_key, execution_id),
                 )
                 existing_factor = cursor.fetchone()
 
                 if existing_factor:
                     # Factor exists - check if value has changed
-                    existing_id = existing_factor['id']
-                    existing_value = existing_factor['value']  
-                    existing_hash = existing_factor['factor_hash']
-                    
-                    print(f"    🔍 Existing factor found: {factor_key} with ID: {existing_id}")
-                    
+                    existing_id = existing_factor["id"]
+                    existing_value = existing_factor["value"]
+                    existing_hash = existing_factor["factor_hash"]
+
+                    print(
+                        f"    🔍 Existing factor found: {factor_key} with ID: {existing_id}"
+                    )
+
                     if existing_hash == factor_hash:
                         # Same value, no update needed
                         print(f"    ⏭️  Skipping {factor_key} - same value")
@@ -128,13 +131,19 @@ class FactorRepository:
                                 updated_by = %s
                             WHERE id = %s
                             """,
-                            (Json(factor_value), factor_hash, now, created_by, existing_id)
+                            (
+                                Json(factor_value),
+                                factor_hash,
+                                now,
+                                created_by,
+                                existing_id,
+                            ),
                         )
                 else:
                     # Factor doesn't exist - insert new one
                     factor_id = self._generate_uuid()
                     print(f"    ➕ Inserting new factor: {factor_key}")
-                    
+
                     cursor.execute(
                         """
                         INSERT INTO factor (
@@ -180,6 +189,7 @@ class FactorRepository:
             print(f"Error saving factors: {e}")
             print(f"Exception type: {type(e)}")
             import traceback
+
             print(f"Traceback: {traceback.format_exc()}")
             self.db.rollback()
             return False
@@ -201,7 +211,7 @@ class FactorRepository:
         """
         try:
             cursor = self.db.cursor()
-            
+
             if underwriting_processor_id:
                 cursor.execute(
                     """
@@ -215,7 +225,7 @@ class FactorRepository:
                       AND status = 'active'
                     ORDER BY created_at DESC
                     """,
-                    (underwriting_id, underwriting_processor_id)
+                    (underwriting_id, underwriting_processor_id),
                 )
             else:
                 cursor.execute(
@@ -229,7 +239,7 @@ class FactorRepository:
                       AND status = 'active'
                     ORDER BY created_at DESC
                     """,
-                    (underwriting_id,)
+                    (underwriting_id,),
                 )
 
             results = cursor.fetchall()
@@ -238,18 +248,20 @@ class FactorRepository:
             # Convert to list of dictionaries
             factors = []
             for row in results:
-                factors.append({
-                    "id": row[0],
-                    "factor_key": row[1],
-                    "value": row[2],
-                    "unit": row[3],
-                    "source": row[4],
-                    "status": row[5],
-                    "underwriting_processor_id": row[6],
-                    "execution_id": row[7],
-                    "created_at": row[8],
-                    "updated_at": row[9],
-                })
+                factors.append(
+                    {
+                        "id": row[0],
+                        "factor_key": row[1],
+                        "value": row[2],
+                        "unit": row[3],
+                        "source": row[4],
+                        "status": row[5],
+                        "underwriting_processor_id": row[6],
+                        "execution_id": row[7],
+                        "created_at": row[8],
+                        "updated_at": row[9],
+                    }
+                )
 
             return factors
 
@@ -286,7 +298,7 @@ class FactorRepository:
                   AND underwriting_processor_id = %s 
                   AND status = 'active'
                 """,
-                (now, updated_by, underwriting_id, underwriting_processor_id)
+                (now, updated_by, underwriting_id, underwriting_processor_id),
             )
 
             self.db.commit()

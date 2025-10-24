@@ -38,7 +38,7 @@ def consolidation(
     factor_repo = FactorRepository()
 
     # Initialize factor_repo with database connection from processor_repo
-    if hasattr(processor_repo, 'db') and processor_repo.db is not None:
+    if hasattr(processor_repo, "db") and processor_repo.db is not None:
         factor_repo.__init__(processor_repo.db)
 
     results = []
@@ -114,11 +114,13 @@ def consolidation(
                     underwriting_processor_id=underwriting_processor_id,
                     execution_id=latest_execution_id,
                     factors=consolidated_factors,
-                    source="processor"
+                    source="processor",
                 )
 
                 if success:
-                    print(f"    💾 Saved {len(consolidated_factors)} factors to database")
+                    print(
+                        f"    💾 Saved {len(consolidated_factors)} factors to database"
+                    )
                 else:
                     print("    ❌ Failed to save factors to database")
 

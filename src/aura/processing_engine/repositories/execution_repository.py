@@ -350,6 +350,7 @@ class ExecutionRepository:
         """
         try:
             from psycopg2.extras import RealDictCursor
+
             cursor = self.db.cursor(cursor_factory=RealDictCursor)
             cursor.execute(query, (execution_id,))
             result = cursor.fetchone()
@@ -503,7 +504,9 @@ class ExecutionRepository:
         """
         try:
             cursor = self.db.cursor()
-            cursor.execute(query, (new_execution_id, datetime.utcnow(), old_execution_id))
+            cursor.execute(
+                query, (new_execution_id, datetime.utcnow(), old_execution_id)
+            )
             self.db.commit()
             cursor.close()
             return True

@@ -57,14 +57,18 @@ def execution(
                 continue
 
             if exec_data["status"] in ["pending"]:
-                print(f"    🎯 Launching: {exec_data['processor']} (ID: {execution_id}, Status: {exec_data['status']})")
+                print(
+                    f"    🎯 Launching: {exec_data['processor']} (ID: {execution_id}, Status: {exec_data['status']})"
+                )
                 future = executor.submit(
                     run_execution,
                     execution=exec_data,
                 )
                 futures.append(future)
             else:
-                print(f"    ⏭️  Skipping: {exec_data['processor']} (ID: {execution_id}, Status: {exec_data['status']})")
+                print(
+                    f"    ⏭️  Skipping: {exec_data['processor']} (ID: {execution_id}, Status: {exec_data['status']})"
+                )
 
         print(f"    ⏳ Waiting for {len(futures)} executions to complete...")
 
@@ -130,7 +134,9 @@ def run_execution(
             app_form_keys = list(payload_data.get("application_form", {}).keys())
             docs_count = len(payload_data.get("documents_list", []))
             owners_count = len(payload_data.get("owners_list", []))
-            print(f"        📦 Payload: {len(app_form_keys)} app fields, {docs_count} docs, {owners_count} owners")
+            print(
+                f"        📦 Payload: {len(app_form_keys)} app fields, {docs_count} docs, {owners_count} owners"
+            )
 
             exec_payload = ExecutionPayload(
                 underwriting_id=execution["underwriting_id"],
@@ -163,11 +169,19 @@ def run_execution(
             )
 
             duration = (datetime.now() - step_start).total_seconds()
-            output_keys = list(result.output.keys()) if isinstance(result.output, dict) else "N/A"
-            cost_dollars = result.total_cost_cents / 100 if result.total_cost_cents else 0
+            output_keys = (
+                list(result.output.keys()) if isinstance(result.output, dict) else "N/A"
+            )
+            cost_dollars = (
+                result.total_cost_cents / 100 if result.total_cost_cents else 0
+            )
 
-            print(f"    ✅ Completed: {processor_name} ({duration:.2f}s, ${cost_dollars:.2f})")
-            print(f"        📊 Output: {len(output_keys) if isinstance(output_keys, list) else 'N/A'} factors")
+            print(
+                f"    ✅ Completed: {processor_name} ({duration:.2f}s, ${cost_dollars:.2f})"
+            )
+            print(
+                f"        📊 Output: {len(output_keys) if isinstance(output_keys, list) else 'N/A'} factors"
+            )
 
             return {
                 "success": True,
