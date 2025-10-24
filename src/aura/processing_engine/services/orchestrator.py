@@ -11,7 +11,6 @@ from ..repositories import (
     ProcessorRepository,
     ExecutionRepository,
     UnderwritingRepository,
-    TestWorkflowRepository,
 )
 from ..base_processor import BaseProcessor
 from .filtration import filtration
@@ -33,7 +32,6 @@ class Orchestrator:
         processor_repo: ProcessorRepository,
         execution_repo: ExecutionRepository,
         underwriting_repo: UnderwritingRepository,
-        test_workflow_repo: Optional[TestWorkflowRepository] = None,
     ):
         """
         Initialize orchestrator with repositories.
@@ -42,12 +40,10 @@ class Orchestrator:
             processor_repo: Repository for processor configuration
             execution_repo: Repository for execution management
             underwriting_repo: Repository for underwriting data
-            test_workflow_repo: Optional repository for test workflow tracking
         """
         self.processor_repo = processor_repo
         self.execution_repo = execution_repo
         self.underwriting_repo = underwriting_repo
-        self.test_workflow_repo = test_workflow_repo
 
     def register_processor(self, processor_class: type[BaseProcessor]):
         """
@@ -90,40 +86,6 @@ class Orchestrator:
         filtration_time = int(
             (datetime.now() - filtration_start).total_seconds() * 1000
         )
-        if self.test_workflow_repo:
-            eligible_procs = filtration_result.get("eligible_processors", [])
-
-            self.test_workflow_repo.log_stage(
-                underwriting_id=underwriting_id,
-                workflow_name="Workflow 1",
-                stage="filtration",
-                payload={"underwriting_id": underwriting_id},
-                input={
-                    "eligible_processors": [
-                        {
-                            "underwriting_processor_id": p["id"],
-                            "processor": p["processor"],
-                            "enabled": p.get("enabled"),
-                            "auto": p.get("auto"),
-                            "current_executions_list": p.get(
-                                "current_executions_list", []
-                            ),
-                        }
-                        for p in eligible_procs
-                    ]
-                },
-                output={
-                    "processor_list": filtration_result["processor_list"],
-                    "execution_list": filtration_result["execution_list"],
-                },
-                status="completed",
-                execution_time_ms=filtration_time,
-                metadata={
-                    "processors_found": len(eligible_procs),
-                    "processors_selected": len(filtration_result["processor_list"]),
-                    "executions_to_run": len(filtration_result["execution_list"]),
-                },
-            )
 
         processor_list = filtration_result["processor_list"]
         execution_list = filtration_result["execution_list"]
@@ -153,26 +115,8 @@ class Orchestrator:
         execution_start = datetime.now()
         execution_result = execution(
             execution_list=execution_list,
-            processor_repo=self.processor_repo,
-            execution_repo=self.execution_repo,
-            test_workflow_repo=self.test_workflow_repo,
         )
         execution_time = int((datetime.now() - execution_start).total_seconds() * 1000)
-        if self.test_workflow_repo:
-            self.test_workflow_repo.log_stage(
-                underwriting_id=underwriting_id,
-                workflow_name="Workflow 1",
-                stage="execution",
-                payload={"execution_list": execution_list},
-                output=execution_result,
-                status="completed",
-                execution_time_ms=execution_time,
-                metadata={
-                    "total_executions": len(execution_list),
-                    "completed": execution_result["completed"],
-                    "failed": execution_result["failed"],
-                },
-            )
 
         print(f"  Executions completed: {execution_result['completed']}")
         print(f"  Executions failed: {execution_result['failed']}")
@@ -183,27 +127,10 @@ class Orchestrator:
         consolidation_start = datetime.now()
         consolidation_result = consolidation(
             processor_list=processor_list,
-            processor_repo=self.processor_repo,
-            execution_repo=self.execution_repo,
-            test_workflow_repo=self.test_workflow_repo,
         )
         consolidation_time = int(
             (datetime.now() - consolidation_start).total_seconds() * 1000
         )
-        if self.test_workflow_repo:
-            self.test_workflow_repo.log_stage(
-                underwriting_id=underwriting_id,
-                workflow_name="Workflow 1",
-                stage="consolidation",
-                payload={"processor_list": processor_list},
-                output=consolidation_result,
-                status="completed",
-                execution_time_ms=consolidation_time,
-                metadata={
-                    "processors_to_consolidate": len(processor_list),
-                    "consolidated": consolidation_result["consolidated"],
-                },
-            )
 
         print(f"  Processors consolidated: {consolidation_result['consolidated']}")
         print()
@@ -228,14 +155,13 @@ class Orchestrator:
 
 
 def create_orchestrator(
-    db_connection: Any, enable_test_tracking: bool = True
+    db_connection: Any
 ) -> Orchestrator:
     """
     Create orchestrator with initialized repositories.
 
     Args:
         db_connection: Database connection
-        enable_test_tracking: Enable test workflow tracking for debugging
 
     Returns:
         Configured Orchestrator instance
@@ -249,14 +175,8 @@ def create_orchestrator(
     underwriting_repo = UnderwritingRepository()
     underwriting_repo.__init__(db_connection)
 
-    test_workflow_repo = None
-    if enable_test_tracking:
-        test_workflow_repo = TestWorkflowRepository()
-        test_workflow_repo.__init__(db_connection)
-
     return Orchestrator(
         processor_repo=processor_repo,
         execution_repo=execution_repo,
         underwriting_repo=underwriting_repo,
-        test_workflow_repo=test_workflow_repo,
     )
