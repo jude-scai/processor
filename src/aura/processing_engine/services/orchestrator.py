@@ -214,7 +214,7 @@ class Orchestrator:
                 existing_execution = self.execution_repo.get_execution_by_id(execution_id)
                 if not existing_execution:
                     raise ValueError(f"Execution not found: {execution_id}")
-                
+
                 # If duplicate is true, create a new execution with the same payload
                 if duplicate:
                     new_execution_id = self.execution_repo.create_execution(
@@ -228,6 +228,9 @@ class Orchestrator:
                     execution_list_to_run.append(new_execution_id)
                     # Mark the old execution as superseded
                     self.execution_repo.mark_execution_superseded(existing_execution["id"], new_execution_id)
+                    print(f"    🔄 EXECUTION SUPERSEDED (Scenario 1)")
+                    print(f"        OLD EXECUTION: {existing_execution['id']}")
+                    print(f"        NEW EXECUTION: {new_execution_id}")
                 else:
                     execution_list_to_run.append(execution_id)
                     # Ensure the execution is marked as pending/failed to be rerun
@@ -259,6 +262,11 @@ class Orchestrator:
             else:
                 # Scenario 2: Rerun entire processor
                 results["scenario"] = "Scenario 2: Rerun entire processor"
+                # If duplicate=True, get current active executions BEFORE creating new ones
+                current_executions = []
+                if duplicate:
+                    current_executions = self.execution_repo.get_active_executions(underwriting_processor_id)
+
                 # Use prepare_processor to get all relevant executions for this processor
                 from .filtration import prepare_processor
                 prepared_executions = prepare_processor(
@@ -269,6 +277,22 @@ class Orchestrator:
                 )
                 if prepared_executions is not None:
                     execution_list_to_run.extend(prepared_executions)
+
+                    # If duplicate=True, supersede old executions with matching payload hash
+                    if duplicate and current_executions and prepared_executions:
+                        for new_exec_id in prepared_executions:
+                            new_exec = self.execution_repo.get_execution_by_id(new_exec_id)
+                            if new_exec and new_exec.get('payload_hash'):
+                                new_payload_hash = new_exec['payload_hash']
+
+                                # Find old execution with same payload hash
+                                for old_exec in current_executions:
+                                    if old_exec.get('payload_hash') == new_payload_hash:
+                                        self.execution_repo.mark_execution_superseded(old_exec['id'], new_exec_id)
+                                        print(f"    🔄 EXECUTION SUPERSEDED (Scenario 2)")
+                                        print(f"        OLD EXECUTION: {old_exec['id']}")
+                                        print(f"        NEW EXECUTION: {new_exec_id}")
+                                        break  # Only supersede the first match
 
             if not execution_list_to_run:
                 results["message"] = "No new executions to run."
