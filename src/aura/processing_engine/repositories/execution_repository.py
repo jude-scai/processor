@@ -349,7 +349,8 @@ class ExecutionRepository:
         WHERE id = %s
         """
         try:
-            cursor = self.db.cursor()
+            from psycopg2.extras import RealDictCursor
+            cursor = self.db.cursor(cursor_factory=RealDictCursor)
             cursor.execute(query, (execution_id,))
             result = cursor.fetchone()
             cursor.close()
@@ -403,11 +404,11 @@ class ExecutionRepository:
             cursor = self.db.cursor()
             cursor.execute(query, (underwriting_processor_id,))
             results = cursor.fetchall()
-            
+
             if not results:
                 cursor.close()
                 return []
-            
+
             # Results are already dictionaries (RealDictRow objects)
             cursor.close()
             return [dict(row) for row in results]
@@ -500,10 +501,15 @@ class ExecutionRepository:
             updated_at = %s
         WHERE id = %s
         """
-        # TODO: Execute update with db connection
-        # self.db.execute(query, (new_execution_id, datetime.utcnow(), old_execution_id))
-        # return True
-        return False
+        try:
+            cursor = self.db.cursor()
+            cursor.execute(query, (new_execution_id, datetime.utcnow(), old_execution_id))
+            self.db.commit()
+            cursor.close()
+            return True
+        except Exception as e:
+            self.db.rollback()
+            return False
 
     def get_execution_chain(self, execution_id: str) -> list[dict[str, Any]]:
         """
