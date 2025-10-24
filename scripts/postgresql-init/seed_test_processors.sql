@@ -46,8 +46,8 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         v_organization_id,
-        'p_application',
-        'Application Data Processor',
+        'test_application_processor',
+        'Test Application Processor',
         true,  -- auto enabled at org level
         100,   -- $1.00 per execution
         'execution',
@@ -91,8 +91,8 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         v_organization_id,
-        'p_bank_statement',
-        'Bank Statement Processor',
+        'test_bank_statement_processor',
+        'Test Bank Statement Processor',
         false,  -- auto disabled - requires manual trigger
         250,    -- $2.50 per document
         'document',
@@ -114,7 +114,7 @@ BEGIN
         v_account_id
     ) RETURNING id INTO v_org_proc_stip_id;
     
-    RAISE NOTICE '  ✅ Created Bank Statement Processor (auto=false): %', v_org_proc_stip_id;
+    RAISE NOTICE '  ✅ Created Test Bank Statement Processor (auto=false): %', v_org_proc_stip_id;
     
     -- Document Processor (should NOT be selected - enabled=false)
     INSERT INTO organization_processors (
@@ -140,8 +140,8 @@ BEGIN
     ) VALUES (
         gen_random_uuid(),
         v_organization_id,
-        'p_drivers_license',
-        'Drivers License Processor',
+        'test_drivers_license_processor',
+        'Test Drivers License Processor',
         true,   -- auto enabled but processor is disabled
         150,    -- $1.50 per document
         'document',
@@ -164,7 +164,7 @@ BEGIN
         v_account_id
     ) RETURNING id INTO v_org_proc_doc_id;
     
-    RAISE NOTICE '  ✅ Created Drivers License Processor (disabled): %', v_org_proc_doc_id;
+    RAISE NOTICE '  ✅ Created Test Drivers License Processor (disabled): %', v_org_proc_doc_id;
     
     -- ========================================================================
     -- 2. Create Underwriting Processors (Link to Underwriting)
@@ -200,8 +200,8 @@ BEGIN
         v_underwriting_id,
         v_org_proc_app_id,
         ARRAY[]::UUID[],
-        'p_application',
-        'Application Data Processor',
+        'test_application_processor',
+        'Test Application Processor',
         true,  -- AUTO ENABLED
         'Should be selected by filtration',
         true,  -- ENABLED
@@ -221,7 +221,7 @@ BEGIN
     
     RAISE NOTICE '  ✅ Linked Application Processor (enabled=true, auto=true)';
     
-    -- Bank Statement Processor - enabled but auto=false
+    -- Test Bank Statement Processor - enabled but auto=false
     INSERT INTO underwriting_processors (
         id,
         organization_id,
@@ -248,8 +248,8 @@ BEGIN
         v_underwriting_id,
         v_org_proc_stip_id,
         ARRAY[]::UUID[],
-        'p_bank_statement',
-        'Bank Statement Processor',
+        'test_bank_statement_processor',
+        'Test Bank Statement Processor',
         false,  -- AUTO DISABLED
         'Should NOT be selected by filtration (auto=false)',
         true,   -- ENABLED
@@ -269,9 +269,9 @@ BEGIN
         v_account_id
     );
     
-    RAISE NOTICE '  ✅ Linked Bank Statement Processor (enabled=true, auto=false)';
+    RAISE NOTICE '  ✅ Linked Test Bank Statement Processor (enabled=true, auto=false)';
     
-    -- Drivers License Processor - disabled
+    -- Test Drivers License Processor - disabled
     INSERT INTO underwriting_processors (
         id,
         organization_id,
@@ -300,8 +300,8 @@ BEGIN
         v_underwriting_id,
         v_org_proc_doc_id,
         ARRAY[]::UUID[],
-        'p_drivers_license',
-        'Drivers License Processor',
+        'test_drivers_license_processor',
+        'Test Drivers License Processor',
         true,   -- AUTO ENABLED
         'Should NOT be selected by filtration (enabled=false)',
         false,  -- DISABLED
@@ -322,7 +322,7 @@ BEGIN
         v_account_id
     );
     
-    RAISE NOTICE '  ✅ Linked Drivers License Processor (enabled=false, auto=true)';
+    RAISE NOTICE '  ✅ Linked Test Drivers License Processor (enabled=false, auto=true)';
     
     -- ========================================================================
     -- Summary
@@ -334,8 +334,8 @@ BEGIN
     RAISE NOTICE '========================================================================';
     RAISE NOTICE 'Expected Filtration Behavior:';
     RAISE NOTICE '  ✅ Application Processor: SELECTED (enabled=true, auto=true)';
-    RAISE NOTICE '  ❌ Bank Statement Processor: SKIPPED (auto=false)';
-    RAISE NOTICE '  ❌ Drivers License Processor: SKIPPED (enabled=false)';
+    RAISE NOTICE '  ❌ Test Bank Statement Processor: SKIPPED (auto=false)';
+    RAISE NOTICE '  ❌ Test Drivers License Processor: SKIPPED (enabled=false)';
     RAISE NOTICE '========================================================================';
     
 END $$;
