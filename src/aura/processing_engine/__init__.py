@@ -40,7 +40,6 @@ from .services import (
     prepare_processor,
     generate_execution,
     execution,
-    run_single_execution,
     consolidation,
 )
 from .utils import (
@@ -76,7 +75,6 @@ __all__ = [
     "prepare_processor",
     "generate_execution",
     "execution",
-    "run_single_execution",
     "consolidation",
     # Utils
     "generate_payload_hash",
