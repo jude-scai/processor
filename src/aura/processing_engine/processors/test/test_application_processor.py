@@ -170,23 +170,3 @@ class TestApplicationProcessor(BaseProcessor):
 
         return True, None
 
-    @staticmethod
-    def consolidate(executions: List[Any]) -> Dict[str, Any]:
-        """
-        Consolidate multiple execution results.
-
-        Args:
-            executions: List of execution results to consolidate
-
-        Returns:
-            Consolidated factors
-        """
-        if not executions:
-            return {}
-
-        if len(executions) == 1:
-            return executions[0].get("factors", {})
-
-        # For multiple executions, use the latest one
-        latest_execution = executions[-1]
-        return latest_execution.get("factors", {})

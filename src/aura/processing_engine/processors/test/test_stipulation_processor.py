@@ -201,36 +201,3 @@ class TestStipulationProcessor(BaseProcessor):
 
         return True, None
 
-    @staticmethod
-    def consolidate(executions: List[Any]) -> Dict[str, Any]:
-        """
-        Consolidate multiple execution results.
-
-        Args:
-            executions: List of execution results to consolidate
-
-        Returns:
-            Consolidated factors
-        """
-        if not executions:
-            return {}
-
-        if len(executions) == 1:
-            return executions[0].get("factors", {})
-
-        # For multiple stipulation executions, aggregate the results
-        consolidated_factors = {}
-        total_documents = 0
-
-        for execution in executions:
-            factors = execution.get("factors", {})
-            total_documents += factors.get("f_document_count", 0)
-
-            # Merge factors (latest values win for conflicts)
-            consolidated_factors.update(factors)
-
-        # Update aggregated values
-        consolidated_factors["f_total_documents"] = total_documents
-        consolidated_factors["f_execution_count"] = len(executions)
-
-        return consolidated_factors

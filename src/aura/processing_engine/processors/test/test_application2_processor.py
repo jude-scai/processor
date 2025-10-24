@@ -113,26 +113,6 @@ class TestApplication2Processor(BaseProcessor):
         return ValidationResult(is_valid=True)
 
     @staticmethod
-    def consolidate(executions: list[dict[str, Any]]) -> dict[str, Any]:
-        """
-        Consolidate results from multiple executions.
-
-        For application processors, typically use the latest execution.
-
-        Args:
-            executions: List of execution records with factors_delta
-
-        Returns:
-            Consolidated factors dictionary
-        """
-        if not executions:
-            return {}
-
-        # Use the latest execution (last in list)
-        latest_execution = executions[-1]
-        return latest_execution.get("factors_delta", {})
-
-    @staticmethod
     def should_execute(payload: ExecutionPayload) -> ValidationResult:
         """
         Determine if processor should execute based on payload.
