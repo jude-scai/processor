@@ -152,38 +152,25 @@ class BaseProcessor(ABC):
         return True, None
 
     @staticmethod
-    def consolidate(executions: list[Any]) -> dict[str, Any]:
+    def consolidate(factors_list: list[dict[str, Any]]) -> dict[str, Any]:
         """
         Consolidate multiple execution outputs into final factors.
 
         Override this method for processors that can have multiple executions
-        (e.g., bank statements across multiple months that need averaging).
+        (e.g., document type processors).
 
-        Default behavior: Return the last execution's factors_delta, or empty dict if none.
+        Default behavior: Return the first execution's factors, or empty dict if none.
 
         Args:
-            executions: List of active execution records (dicts with 'factors_delta' key)
+            factors_list: List of factors dictionaries from executions
 
         Returns:
             Consolidated factors dictionary
         """
-        if not executions:
+        if not factors_list:
             return {}
-        if len(executions) == 1:
-            exec_data = executions[0]
-            return (
-                exec_data.get("factors_delta") or {}
-                if isinstance(exec_data, dict)
-                else (exec_data.factors_delta or {})
-            )
-
-        # Return latest execution's factors
-        latest = executions[-1]
-        return (
-            latest.get("factors_delta") or {}
-            if isinstance(latest, dict)
-            else (latest.factors_delta or {})
-        )
+        
+        return factors_list[0]
 
     # =====================================================================
     # FORMAT PAYLOAD LIST (For Orchestration)
