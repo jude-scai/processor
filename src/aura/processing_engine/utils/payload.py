@@ -56,6 +56,10 @@ def _format_application_payload(
     # Get trigger fields from PROCESSOR_TRIGGERS
     trigger_fields = processor_triggers.get("application_form", [])
 
+    # Add check for empty triggers
+    if not trigger_fields:
+        return None  # No triggers configured, skip processor
+
     # Build application form from underwriting merchant fields
     application_form = {}
     merchant = underwriting_data.get("merchant", {})
@@ -73,16 +77,18 @@ def _format_application_payload(
         "state_of_incorporation": "merchant.state_of_incorporation",
     }
 
+    # Only include fields that are in the trigger list
     for field, dot_key in field_mapping.items():
-        value = merchant.get(field)
-        if value is not None:
-            application_form[dot_key] = value
+        if dot_key in trigger_fields:
+            value = merchant.get(field)
+            if value is not None and value != "":
+                application_form[dot_key] = value
 
-    # Check if all trigger fields are null
+    # Check if any trigger fields have data
     has_data = any(application_form.get(field) is not None for field in trigger_fields)
 
     if not has_data:
-        return []
+        return []  # Triggers match, but no data available
 
     # Return single payload with application form and owners
     return [
