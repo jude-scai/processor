@@ -166,6 +166,117 @@ def handle_document_analyzed(message):
             message.ack()
 
 
+def handle_underwriting_processor_execute(message):
+    """Handle underwriting.processor.execute event (Workflow 2)."""
+    try:
+        data = json.loads(message.data.decode("utf-8"))
+
+        print(f"\n{'='*70}", flush=True)
+        print(f"📨 Received: underwriting.processor.execute", flush=True)
+        print(f"   Payload: {data}", flush=True)
+        print(f"{'='*70}", flush=True)
+
+        # Extract parameters
+        underwriting_processor_id = data.get("underwriting_processor_id")
+        execution_id = data.get("execution_id")  # Optional - Scenario 1
+        duplicate = data.get("duplicate", False)  # Optional - force duplicate
+        application_form = data.get("application_form")  # Optional - Scenario 3
+        document_list = data.get("document_list")  # Optional - Scenario 3
+
+        # Validate required parameter
+        if not underwriting_processor_id:
+            print("   ❌ Missing required parameter: underwriting_processor_id", flush=True)
+            message.ack()
+            return
+
+        # Create orchestrator and execute workflow
+        conn = get_db_connection()
+        orchestrator = create_orchestrator(conn)
+        result = orchestrator.handle_workflow2(
+            underwriting_processor_id=underwriting_processor_id,
+            execution_id=execution_id,
+            duplicate=duplicate,
+            application_form=application_form,
+            document_list=document_list,
+        )
+        conn.close()
+
+        print(f"\n✅ Workflow 2 completed", flush=True)
+        print(f"   Scenario: {result.get('scenario', 'unknown')}", flush=True)
+        print(f"   Success: {result.get('success', False)}", flush=True)
+
+        message.ack()
+    except Exception as e:
+        print(f"\n❌ Error processing underwriting.processor.execute: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+
+        # Determine if error is transient or permanent
+        error_str = str(e).lower()
+        transient_errors = [
+            "connection",
+            "timeout",
+            "network",
+            "temporarily unavailable",
+            "resource temporarily unavailable",
+        ]
+
+        is_transient = any(err in error_str for err in transient_errors)
+
+        if is_transient:
+            print("   ⚠️  Transient error - will retry (NACK)", flush=True)
+            message.nack()
+        else:
+            print("   ⚠️  Permanent error - skipping message (ACK)", flush=True)
+            message.ack()
+
+
+def handle_underwriting_processor_consolidation(message):
+    """Handle underwriting.processor.consolidation event (Workflow 3)."""
+    try:
+        data = json.loads(message.data.decode("utf-8"))
+        underwriting_processor_id = data.get("underwriting_processor_id")
+
+        print(f"\n{'='*70}", flush=True)
+        print(f"📨 Received: underwriting.processor.consolidation", flush=True)
+        print(f"   Underwriting Processor ID: {underwriting_processor_id}", flush=True)
+        print(f"{'='*70}", flush=True)
+
+        # Create orchestrator and execute workflow 3 (consolidation only)
+        conn = get_db_connection()
+        orchestrator = create_orchestrator(conn)
+        result = orchestrator.handle_workflow3(underwriting_processor_id)
+        conn.close()
+
+        print(f"\n✅ Workflow 3 completed", flush=True)
+        print(f"   Success: {result.get('success', False)}", flush=True)
+
+        message.ack()
+    except Exception as e:
+        print(f"\n❌ Error processing underwriting.processor.consolidation: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+
+        # Determine if error is transient or permanent
+        error_str = str(e).lower()
+        transient_errors = [
+            "connection",
+            "timeout",
+            "network",
+            "temporarily unavailable",
+            "resource temporarily unavailable",
+        ]
+
+        is_transient = any(err in error_str for err in transient_errors)
+
+        if is_transient:
+            print("   ⚠️  Transient error - will retry (NACK)", flush=True)
+            message.nack()
+        else:
+            print("   ⚠️  Permanent error - skipping message (ACK)", flush=True)
+            message.ack()
+
+
 def main():
     """Start Pub/Sub subscriber."""
     print("""
@@ -175,8 +286,10 @@ def main():
 
     Connecting to Pub/Sub emulator: localhost:8085
     Listening to topics:
-      - underwriting.updated
-      - document.analyzed
+      - underwriting.updated (Workflow 1)
+      - document.analyzed (Workflow 1)
+      - underwriting.processor.execute (Workflow 2)
+      - underwriting.processor.consolidation (Workflow 3)
 
     Press Ctrl+C to stop...
     """, flush=True)
@@ -189,6 +302,8 @@ def main():
     topics = {
         "underwriting.updated": handle_underwriting_updated,
         "document.analyzed": handle_document_analyzed,
+        "underwriting.processor.execute": handle_underwriting_processor_execute,
+        "underwriting.processor.consolidation": handle_underwriting_processor_consolidation,
     }
 
     # Create topics and subscriptions

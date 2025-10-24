@@ -153,6 +153,224 @@ class Orchestrator:
             },
         }
 
+    def handle_workflow2(self, underwriting_processor_id: str, execution_id: str = None, duplicate: bool = False, application_form: dict = None, document_list: list = None) -> dict[str, Any]:
+        """
+        Handle Workflow 2: Manual processor execution.
+
+        Triggered by: underwriting.processor.execute events
+
+        Scenarios:
+        1. Rerun specific execution (with execution_id)
+        2. Rerun entire processor (no execution_id)
+        3. Run with selective data (application_form or document_list)
+
+        Args:
+            underwriting_processor_id: The underwriting processor to execute
+            execution_id: Optional specific execution to rerun (Scenario 1)
+            duplicate: Allow duplicate execution even with same hash
+            application_form: Optional application form data (Scenario 3)
+            document_list: Optional document list (Scenario 3)
+
+        Returns:
+            Execution results
+        """
+        print(f"\n{'='*70}")
+        print("WORKFLOW 2: Manual Processor Execution")
+        print(f"Underwriting Processor ID: {underwriting_processor_id}")
+        if execution_id:
+            print(f"Execution ID: {execution_id}")
+        if duplicate:
+            print("Duplicate: True")
+        print(f"{'='*70}\n")
+
+        results = {
+            "success": False,
+            "scenario": "unknown",
+            "executions_run": 0,
+            "executions_failed": 0,
+            "processors_consolidated": 0,
+            "details": {},
+        }
+
+        try:
+            # Get processor configuration
+            processor_config = self.processor_repo.get_underwriting_processor_by_id(
+                underwriting_processor_id
+            )
+            if not processor_config:
+                raise ValueError(f"Underwriting processor not found: {underwriting_processor_id}")
+
+            underwriting_id = processor_config["underwriting_id"]
+            underwriting_data = self.underwriting_repo.get_underwriting_with_details(underwriting_id)
+            if not underwriting_data:
+                raise ValueError(f"Underwriting not found: {underwriting_id}")
+
+            execution_list_to_run = []
+            processor_list_to_consolidate = [underwriting_processor_id]
+
+            if execution_id:
+                # Scenario 1: Rerun specific execution
+                results["scenario"] = "Scenario 1: Rerun specific execution"
+                existing_execution = self.execution_repo.get_execution_by_id(execution_id)
+                if not existing_execution:
+                    raise ValueError(f"Execution not found: {execution_id}")
+                
+                # If duplicate is true, create a new execution with the same payload
+                if duplicate:
+                    new_execution_id = self.execution_repo.create_execution(
+                        underwriting_id=existing_execution["underwriting_id"],
+                        underwriting_processor_id=existing_execution["underwriting_processor_id"],
+                        organization_id=existing_execution["organization_id"],
+                        processor_name=existing_execution["processor"],
+                        payload=existing_execution["payload"],
+                        payload_hash=existing_execution["payload_hash"]
+                    )
+                    execution_list_to_run.append(new_execution_id)
+                    # Mark the old execution as superseded
+                    self.execution_repo.mark_execution_superseded(existing_execution["id"], new_execution_id)
+                else:
+                    execution_list_to_run.append(execution_id)
+                    # Ensure the execution is marked as pending/failed to be rerun
+                    self.execution_repo.update_execution_status(execution_id, status="pending")
+
+            elif application_form or document_list:
+                # Scenario 3: Selective data execution
+                results["scenario"] = "Scenario 3: Selective data execution"
+                # Construct a temporary payload for this specific run
+                temp_payload = {
+                    "underwriting_id": underwriting_id,
+                    "underwriting_processor_id": underwriting_processor_id,
+                    "application_form": application_form if application_form else underwriting_data.get("application_form", {}),
+                    "owners_list": underwriting_data.get("owners", []),
+                    "documents_list": document_list if document_list else underwriting_data.get("documents", []),
+                }
+                # Generate a new execution based on this selective data
+                from .filtration import generate_execution
+                from ..models import ExecutionPayload
+                new_execution_id = generate_execution(
+                    underwriting_processor_id=underwriting_processor_id,
+                    payload=ExecutionPayload(**temp_payload),
+                    processor_config=processor_config,
+                    processor_triggers=self.processor_repo.get_processor_triggers(processor_config["processor"]),
+                    duplicate=duplicate,
+                )
+                execution_list_to_run.append(new_execution_id)
+
+            else:
+                # Scenario 2: Rerun entire processor
+                results["scenario"] = "Scenario 2: Rerun entire processor"
+                # Use prepare_processor to get all relevant executions for this processor
+                from .filtration import prepare_processor
+                prepared_executions = prepare_processor(
+                    underwriting_processor_id=underwriting_processor_id,
+                    underwriting_data=underwriting_data,
+                    processor_config=processor_config,
+                    duplicate=duplicate,
+                )
+                if prepared_executions is not None:
+                    execution_list_to_run.extend(prepared_executions)
+
+            if not execution_list_to_run:
+                results["message"] = "No new executions to run."
+                results["success"] = True
+                return results
+
+            # Step 2: Execution
+            execution_result = execution(
+                execution_list=execution_list_to_run,
+            )
+            results["executions_run"] = execution_result["completed"]
+            results["executions_failed"] = execution_result["failed"]
+            results["details"]["execution_results"] = execution_result["results"]
+
+            # Step 3: Consolidation
+            consolidation_result = consolidation(
+                processor_list=processor_list_to_consolidate,
+            )
+            results["processors_consolidated"] = consolidation_result["consolidated"]
+            results["details"]["consolidation_results"] = consolidation_result["results"]
+
+            results["success"] = True
+
+        except Exception as e:
+            results["success"] = False
+            results["error"] = str(e)
+            print(f"❌ Workflow 2 Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+        print("=" * 70)
+        print("Workflow 2 Complete")
+        print("=" * 70)
+        print()
+
+        return {
+            "success": results.get("success", True),
+            "scenario": results.get("scenario", "unknown"),
+            "details": results,
+        }
+
+    def handle_workflow3(self, underwriting_processor_id: str) -> dict[str, Any]:
+        """
+        Handle Workflow 3: Processor consolidation only.
+
+        Triggered by: underwriting.processor.consolidation events
+
+        Steps:
+        1. Load current active executions for the processor
+        2. Re-consolidate factors from active executions (no new executions)
+        3. Update factors in database
+
+        Args:
+            underwriting_processor_id: The underwriting processor to consolidate
+
+        Returns:
+            Consolidation results
+        """
+        print(f"\n{'='*70}")
+        print("WORKFLOW 3: Consolidation Only")
+        print(f"Underwriting Processor ID: {underwriting_processor_id}")
+        print(f"{'='*70}\n")
+
+        results = {
+            "success": False,
+            "processors_consolidated": 0,
+            "details": {},
+        }
+
+        try:
+            processor_config = self.processor_repo.get_underwriting_processor_by_id(
+                underwriting_processor_id
+            )
+            if not processor_config:
+                raise ValueError(f"Underwriting processor not found: {underwriting_processor_id}")
+
+            underwriting_id = processor_config["underwriting_id"]
+            processor_list_to_consolidate = [underwriting_processor_id]
+
+            # Step 1: Consolidation
+            consolidation_result = consolidation(
+                processor_list=processor_list_to_consolidate,
+            )
+            results["processors_consolidated"] = consolidation_result["consolidated"]
+            results["details"]["consolidation_results"] = consolidation_result["results"]
+
+            results["success"] = True
+
+        except Exception as e:
+            results["success"] = False
+            results["error"] = str(e)
+
+        print("=" * 70)
+        print("Workflow 3 Complete")
+        print("=" * 70)
+        print()
+
+        return {
+            "success": results.get("success", True),
+            "details": results,
+        }
+
 
 def create_orchestrator(
     db_connection: Any

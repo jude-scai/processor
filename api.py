@@ -20,7 +20,8 @@ from google.auth.credentials import AnonymousCredentials
 import json
 import os
 
-from aura.processing_engine.repositories import UnderwritingRepository
+from aura.processing_engine.repositories import UnderwritingRepository, ProcessorRepository, ExecutionRepository
+from aura.processing_engine.services import create_orchestrator
 
 # Pub/Sub configuration
 os.environ["PUBSUB_EMULATOR_HOST"] = "localhost:8085"
@@ -144,8 +145,8 @@ def root():
             "GET /underwritings": "List all underwritings",
             "GET /underwritings/{id}": "Get single underwriting",
             "POST /trigger/workflow1": "Trigger Workflow 1 (underwriting.updated)",
-            "POST /trigger/workflow2": "Trigger Workflow 2 (processor.execute)",
-            "POST /trigger/workflow3": "Trigger Workflow 3 (processor.consolidation)",
+            "POST /trigger/workflow2": "Trigger Workflow 2 (processor.execute) - 3 scenarios: specific execution, entire processor, or selective data",
+            "POST /trigger/workflow3": "Trigger Workflow 3 (processor.consolidation) - Consolidation only, no execution",
             "POST /trigger/workflow4": "Trigger Workflow 4 (execution.activate)",
             "POST /trigger/workflow5": "Trigger Workflow 5 (execution.disable)",
             "GET /health": "Health check",
@@ -346,6 +347,27 @@ if __name__ == "__main__":
     GET  /underwritings                List all underwritings
     GET  /underwritings/{id}           Get single underwriting
 
+    Quick Test:
+    -----------
+    curl http://localhost:8000/health
+    curl http://localhost:8000/underwritings
+
+    """
+    )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    print("""
+    🚀 Starting AURA API Server
+    =========================
+    
+    Server will be available at: http://localhost:8000
+    
+    API Documentation:
+    - Swagger UI: http://localhost:8000/docs
+    - ReDoc: http://localhost:8000/redoc
+    
     Quick Test:
     -----------
     curl http://localhost:8000/health
