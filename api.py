@@ -361,13 +361,13 @@ if __name__ == "__main__":
     print("""
     🚀 Starting AURA API Server
     =========================
-    
+
     Server will be available at: http://localhost:8000
-    
+
     API Documentation:
     - Swagger UI: http://localhost:8000/docs
     - ReDoc: http://localhost:8000/redoc
-    
+
     Quick Test:
     -----------
     curl http://localhost:8000/health

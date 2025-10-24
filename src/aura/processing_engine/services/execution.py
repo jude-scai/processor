@@ -56,7 +56,7 @@ def execution(
                 print(f"    ⚠️  Execution not found: {execution_id}")
                 continue
 
-            if exec_data["status"] in ["pending", "failed"]:
+            if exec_data["status"] in ["pending"]:
                 print(f"    🎯 Launching: {exec_data['processor']} (ID: {execution_id}, Status: {exec_data['status']})")
                 future = executor.submit(
                     run_execution,
@@ -67,7 +67,7 @@ def execution(
                 print(f"    ⏭️  Skipping: {exec_data['processor']} (ID: {execution_id}, Status: {exec_data['status']})")
 
         print(f"    ⏳ Waiting for {len(futures)} executions to complete...")
-        
+
         for future in concurrent.futures.as_completed(futures):
             try:
                 result = future.result()
@@ -75,12 +75,12 @@ def execution(
             except Exception as e:
                 print(f"    ❌ Execution error: {e}")
                 results.append({"success": False, "error": str(e)})
-    
+
     completed = sum(1 for r in results if r.get("success"))
     failed = sum(1 for r in results if not r.get("success"))
-    
+
     print(f"    📊 Execution Summary: {completed} completed, {failed} failed")
-    
+
     return {"completed": completed, "failed": failed, "results": results}
 
 
@@ -124,14 +124,14 @@ def run_execution(
         processor._underwriting_processor_id = underwriting_processor_id
 
         payload_data = execution["payload"]
-        
+
         # Log payload information
         if isinstance(payload_data, dict):
             app_form_keys = list(payload_data.get("application_form", {}).keys())
             docs_count = len(payload_data.get("documents_list", []))
             owners_count = len(payload_data.get("owners_list", []))
             print(f"        📦 Payload: {len(app_form_keys)} app fields, {docs_count} docs, {owners_count} owners")
-            
+
             exec_payload = ExecutionPayload(
                 underwriting_id=execution["underwriting_id"],
                 underwriting_processor_id=underwriting_processor_id,
@@ -165,7 +165,7 @@ def run_execution(
             duration = (datetime.now() - step_start).total_seconds()
             output_keys = list(result.output.keys()) if isinstance(result.output, dict) else "N/A"
             cost_dollars = result.total_cost_cents / 100 if result.total_cost_cents else 0
-            
+
             print(f"    ✅ Completed: {processor_name} ({duration:.2f}s, ${cost_dollars:.2f})")
             print(f"        📊 Output: {len(output_keys) if isinstance(output_keys, list) else 'N/A'} factors")
 
