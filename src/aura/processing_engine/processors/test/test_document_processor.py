@@ -232,41 +232,40 @@ class TestDocumentProcessor(BaseProcessor):
         return True, None
 
     @staticmethod
-    def consolidate(executions: List[Any]) -> Dict[str, Any]:
+    def consolidate(factors_delta_list: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Consolidate multiple execution results.
 
         Args:
-            executions: List of execution results to consolidate
+            factors_delta_list: List of factors_delta dictionaries from executions
 
         Returns:
             Consolidated factors
         """
-        if not executions:
+        if not factors_delta_list:
             return {}
 
-        if len(executions) == 1:
-            return executions[0].get("factors", {})
+        if len(factors_delta_list) == 1:
+            return factors_delta_list[0]
 
         # For multiple document executions, collect all factors
         consolidated_factors = {}
         processed_documents = []
 
-        for execution in executions:
-            factors = execution.get("factors", {})
+        for factors_delta in factors_delta_list:
             processed_documents.append(
                 {
-                    "revision_id": factors.get("f_revision_id"),
-                    "document_id": factors.get("f_document_id"),
-                    "stipulation_type": factors.get("f_stipulation_type"),
+                    "revision_id": factors_delta.get("f_revision_id"),
+                    "document_id": factors_delta.get("f_document_id"),
+                    "stipulation_type": factors_delta.get("f_stipulation_type"),
                 }
             )
 
             # Merge factors (latest values win for conflicts)
-            consolidated_factors.update(factors)
+            consolidated_factors.update(factors_delta)
 
         # Add aggregated metadata
         consolidated_factors["f_processed_documents"] = processed_documents
-        consolidated_factors["f_total_documents_processed"] = len(executions)
+        consolidated_factors["f_total_documents_processed"] = len(factors_delta_list)
 
         return consolidated_factors
