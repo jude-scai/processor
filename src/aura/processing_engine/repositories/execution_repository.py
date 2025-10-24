@@ -395,7 +395,7 @@ class ExecutionRepository:
             ON pe.underwriting_processor_id = up.id
         WHERE pe.underwriting_processor_id = %s
           AND pe.enabled = true
-          AND pe.status = 'completed'
+          AND pe.status IN ('completed', 'failed')
           AND pe.id = ANY(up.current_executions_list)
         ORDER BY pe.completed_at DESC
         """
@@ -403,8 +403,14 @@ class ExecutionRepository:
             cursor = self.db.cursor()
             cursor.execute(query, (underwriting_processor_id,))
             results = cursor.fetchall()
+            
+            if not results:
+                cursor.close()
+                return []
+            
+            # Results are already dictionaries (RealDictRow objects)
             cursor.close()
-            return [dict(row) for row in results] if results else []
+            return [dict(row) for row in results]
         except Exception as e:
             print(f"Error fetching active executions: {e}")
             return []
