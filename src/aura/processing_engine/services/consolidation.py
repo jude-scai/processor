@@ -10,16 +10,13 @@ from typing import Any, Optional
 from ..repositories import (
     ProcessorRepository,
     ExecutionRepository,
-    TestWorkflowRepository,
+    FactorRepository,
 )
 from .registry import get_registry
 
 
 def consolidation(
     processor_list: list[str],
-    processor_repo: ProcessorRepository,
-    execution_repo: ExecutionRepository,
-    test_workflow_repo: Optional[TestWorkflowRepository] = None,
 ) -> dict[str, Any]:
     """
     Consolidate execution results for multiple processors.
@@ -32,14 +29,19 @@ def consolidation(
 
     Args:
         processor_list: List of underwriting_processor_ids to consolidate
-        processor_repo: Repository for processor configuration
-        execution_repo: Repository for execution management
-        processor_registry: Registry of processor classes
-        test_workflow_repo: Optional repository for test workflow tracking
 
     Returns:
         Consolidation results with counts
     """
+    # Instantiate repositories directly
+    processor_repo = ProcessorRepository()
+    execution_repo = ExecutionRepository()
+    factor_repo = FactorRepository()
+    
+    # Initialize factor_repo with database connection from processor_repo
+    if hasattr(processor_repo, 'db') and processor_repo.db is not None:
+        factor_repo.__init__(processor_repo.db)
+
     results = []
 
     for underwriting_processor_id in processor_list:
@@ -70,47 +72,41 @@ def consolidation(
 
             processor_class = processor_registry.get_processor(processor_name)
 
-            consolidated_factors = processor_class.consolidate(active_executions)
+            # Extract factors from each execution's factors_delta
+            factors_list = []
+            for execution in active_executions:
+                factors_delta = execution.get("factors_delta", {})
+                factors = factors_delta.get("factors", {})
+                factors_list.append(factors)
 
-            print(f"    ✅ Consolidated: {len(consolidated_factors)} factors")
+            consolidated_factors = processor_class.consolidate(factors_list)
+
+            print(f"    ✅ Consolidated: {(consolidated_factors)}")
+
+            # Save factors to database
+            if consolidated_factors:
+                # Get organization_id and underwriting_id from processor config
+                organization_id = processor_config.get("organization_id")
+                underwriting_id = processor_config.get("underwriting_id")
+                
+                # Get the latest execution_id for lineage tracking
+                latest_execution_id = active_executions[0].get("id") if active_executions else None
+
+                success = factor_repo.save_factors(
+                    organization_id=organization_id,
+                    underwriting_id=underwriting_id,
+                    underwriting_processor_id=underwriting_processor_id,
+                    execution_id=latest_execution_id,
+                    factors=consolidated_factors,
+                    source="processor"
+                )
+
+                if success:
+                    print(f"    💾 Saved {len(consolidated_factors)} factors to database")
+                else:
+                    print(f"    ❌ Failed to save factors to database")
 
             step_time = int((datetime.now() - step_start).total_seconds() * 1000)
-            if test_workflow_repo:
-                test_workflow_repo.log_stage(
-                    underwriting_id=processor_config["underwriting_id"],
-                    workflow_name="Workflow 1",
-                    stage="consolidate_processor",
-                    payload={
-                        "underwriting_processor_id": underwriting_processor_id,
-                        "processor": processor_name,
-                    },
-                    input={
-                        "active_executions": [
-                            {
-                                "execution_id": ex.get("id"),
-                                "status": ex.get("status"),
-                                "factors_delta_keys": (
-                                    list(ex.get("factors_delta", {}).keys())
-                                    if ex.get("factors_delta")
-                                    else []
-                                ),
-                            }
-                            for ex in active_executions
-                        ]
-                    },
-                    output={
-                        "result": "success",
-                        "factors": consolidated_factors,
-                        "factor_count": len(consolidated_factors),
-                    },
-                    status="completed",
-                    execution_time_ms=step_time,
-                    metadata={
-                        "processor": processor_name,
-                        "executions_used": len(active_executions),
-                        "execution_ids": [ex["id"] for ex in active_executions],
-                    },
-                )
 
             results.append(
                 {
@@ -128,22 +124,6 @@ def consolidation(
             print(f"    ❌ Consolidation failed: {e}")
 
             step_time = int((datetime.now() - step_start).total_seconds() * 1000)
-            if test_workflow_repo and processor_config:
-                test_workflow_repo.log_stage(
-                    underwriting_id=processor_config.get("underwriting_id"),
-                    workflow_name="Workflow 1",
-                    stage="consolidate_processor",
-                    payload={
-                        "underwriting_processor_id": underwriting_processor_id,
-                        "processor": processor_config.get("processor", "unknown"),
-                    },
-                    input=None,
-                    output={"result": "error", "error": str(e)},
-                    status="failed",
-                    execution_time_ms=step_time,
-                    error_message=str(e),
-                    metadata={"exception_type": type(e).__name__},
-                )
 
             results.append(
                 {
