@@ -1,7 +1,3 @@
----
-alwaysApply: true
----
-
 # AURA Implementation Logic & Patterns
 
 ## Team 1: Data Infrastructure & Storage Implementation Logic

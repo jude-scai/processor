@@ -1,7 +1,3 @@
----
-alwaysApply: true
----
-
 # Overview
 
 This module implements the Pub/Sub subscriber for underwriting processing orchestration. It coordinates processor execution across multiple workflows, handling document processing, execution management, and rollback operations. All purchased processors are evaluated, filtered by triggers, executed, and their results are persisted and consolidated into final factors.

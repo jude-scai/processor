@@ -1,7 +1,3 @@
----
-alwaysApply: true
----
-
 # What is the Processor Module?
 
 The Processor Module is a **centralized orchestration engine** that coordinates the execution of individual processors based on incoming events and business logic. It operates as a **Pub/Sub subscriber** that receives events from the Orchestrator and manages the complete processor lifecycle.

@@ -1,5 +1,7 @@
 ---
 alwaysApply: true
+apply:
+  - "**/*.py"
 ---
 
 ### Always use built-in typing instead of imported typing.

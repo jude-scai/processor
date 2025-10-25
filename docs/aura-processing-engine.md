@@ -1,6 +1,3 @@
----
-alwaysApply: true
----
 
 For this project, we will use focus on the processing engine of the AURA system.
 

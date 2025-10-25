@@ -1,7 +1,3 @@
----
-alwaysApply: true
----
-
 # AURA Underwriting System - Project Division & Team Design
 
 ## Project Overview

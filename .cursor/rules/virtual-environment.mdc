@@ -1,5 +1,11 @@
 ---
 alwaysApply: true
+apply:
+  - "**/*.py"
+  - "**/*.sh"
+  - "**/*.yml"
+  - "**/*.yaml"
+  - "**/*.toml"
 ---
 
 Always use the virtual environment for this project.

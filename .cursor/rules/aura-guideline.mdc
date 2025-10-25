@@ -1,0 +1,47 @@
+---
+alwaysApply: false
+apply:
+  - "src/aura/**/*.py"
+  - "subscriber.py"
+  - "api.py"
+---
+
+# AURA Coding Guidelines – Read-First Pointers
+
+Use these reference docs in `docs/` before editing code. They are the canonical source of truth for AURA architecture, execution semantics, and data contracts.
+
+## Reference Index (docs/)
+- Architecture & Structure
+  - `docs/aura-monolith-structure.md`
+  - `docs/aura-project-divisions.md`
+- Processing Engine (execution, orchestration, module design)
+  - `docs/aura-processing-engine.md`
+  - `docs/aura-processor-module.md`
+  - `docs/aura-processor-execution.md`
+  - `docs/aura-processor-orchestration.md`
+- Data & Schemas
+  - `docs/aura-database-schema.md`
+- Implementation Logic & Patterns (cross-cutting)
+  - `docs/aura-implementation-logic.md`
+
+## When to Consult What
+- Editing processor code or adding a new processor → execution rules and base class APIs:
+  - `aura-processor-execution.md`, `aura-processor-module.md`
+- Touching orchestration, subscriber flows, or workflows → topics/events, filtration/execution/consolidation:
+  - `aura-processor-orchestration.md`, `aura-processing-engine.md`
+- Changing tables, persistence, or factor lineage → schemas, idempotency, activation/deactivation:
+  - `aura-database-schema.md`
+- Project layout, team boundaries, where code belongs →
+  - `aura-monolith-structure.md`, `aura-project-divisions.md`
+- System-wide implementation patterns (caching, retry, CDC, pipelines) →
+  - `aura-implementation-logic.md`
+
+## Best Prompt (Context7 + Editing Guidance)
+"Before making edits, open the relevant docs listed above for the feature you’re touching. Adhere strictly to the execution/consolidation semantics and database contracts. If you need third‑party library or API details, use Context7 MCP tools to resolve the library ID and fetch current documentation before coding. Propose minimal, high‑signal edits with precise CODE REFERENCES to the existing files."
+
+## Editing Checklist
+- Does the change follow the 3‑phase execution pipeline and atomic semantics?
+- Are consolidation rules consistent with processor type and factor lineage?
+- Do DB writes align with schema contracts and idempotency?
+- Is the code placed in the correct module per monolith structure?
+- Have you consulted Context7 for any external API/library usage?

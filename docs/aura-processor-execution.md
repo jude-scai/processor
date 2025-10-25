@@ -1,8 +1,5 @@
----
-alwaysApply: true
----
-
 **Applies to:** `BaseProcessor` abstract class and all implementing processor subclasses.
+ 
 
 **Purpose:** Define how a processor run is executed with clear separation between execution outputs and factor consolidation, standardized 3-phase pipeline, and comprehensive error handling.
 

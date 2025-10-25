@@ -1,7 +1,3 @@
----
-alwaysApply: true
----
-
 ## 1) Identity, Tenancy, Auth & RBAC
 
 ### organization
