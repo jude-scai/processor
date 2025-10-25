@@ -22,7 +22,9 @@ export PYTHONPATH="$PWD/src:$PYTHONPATH"
 # Load environment variables from .env file if it exists
 if [ -f .env ]; then
     echo "Loading environment variables from .env file..."
-    export $(grep -v '^#' .env | xargs)
+    set -a
+    source .env
+    set +a
 fi
 
 # Set default PostgreSQL password if not set
@@ -30,7 +32,22 @@ export PGPASSWORD=${POSTGRES_PASSWORD:-aura_password}
 
 # Check if PostgreSQL is running
 echo "Checking PostgreSQL connection..."
-if psql -h localhost -U aura_user -d aura_underwriting -c "SELECT 1" > /dev/null 2>&1; then
+if .venv/bin/python -c "
+import psycopg2
+try:
+    conn = psycopg2.connect(
+        host='localhost',
+        port=5432,
+        database='aura_underwriting',
+        user='aura_user',
+        password='aura_password'
+    )
+    conn.close()
+    print('SUCCESS')
+except Exception as e:
+    print('FAILED')
+    exit(1)
+" | grep -q "SUCCESS"; then
     echo "✅ PostgreSQL is running"
 else
     echo "❌ PostgreSQL connection failed"
