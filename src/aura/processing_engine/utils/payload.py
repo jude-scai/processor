@@ -85,9 +85,7 @@ def _format_application_payload(
                 application_form[dot_key] = value
 
     # Check if any trigger fields have data
-    has_data = any(application_form.get(field) is not None for field in trigger_fields)
-
-    if not has_data:
+    if not any(application_form.get(field) is not None for field in trigger_fields):
         return []  # Triggers match, but no data available
 
     # Return single payload with application form and owners
@@ -120,24 +118,15 @@ def _format_stipulation_payload(
     if not trigger_docs:
         return []
 
-    stipulation_type = trigger_docs[0]  # e.g., 's_bank_statement'
-
     # Get documents from underwriting data
     documents = underwriting_data.get("documents", [])
 
-    # Filter documents by stipulation type
-    matching_docs = [
-        doc for doc in documents if doc.get("stipulation_type") == stipulation_type
-    ]
-
-    if not matching_docs:
-        return []
-
-    # Extract revision IDs
+    # Filter documents by stipulation type and extract revision IDs
     revision_ids = [
         doc.get("current_revision_id")
-        for doc in matching_docs
-        if doc.get("current_revision_id")
+        for doc in documents
+        if doc.get("stipulation_type") == trigger_docs[0]
+        and doc.get("current_revision_id")
     ]
 
     if not revision_ids:
@@ -168,24 +157,13 @@ def _format_document_payload(
     if not trigger_docs:
         return []
 
-    stipulation_type = trigger_docs[0]  # e.g., 's_bank_statement'
-
     # Get documents from underwriting data
     documents = underwriting_data.get("documents", [])
 
-    # Filter documents by stipulation type
-    matching_docs = [
-        doc for doc in documents if doc.get("stipulation_type") == stipulation_type
-    ]
-
-    if not matching_docs:
-        return []
-
     # Create one payload per document revision
-    payloads = []
-    for doc in matching_docs:
-        revision_id = doc.get("current_revision_id")
-        if revision_id:
-            payloads.append({"revision_id": revision_id})
-
-    return payloads
+    return [
+        {"revision_id": doc.get("current_revision_id")}
+        for doc in documents
+        if doc.get("stipulation_type") == trigger_docs[0]
+        and doc.get("current_revision_id")
+    ]

@@ -95,9 +95,9 @@ class FactorRepository:
                 cursor.execute(
                     """
                     SELECT id, value, factor_hash
-                    FROM factor 
-                    WHERE underwriting_id = %s 
-                      AND factor_key = %s 
+                    FROM factor
+                    WHERE underwriting_id = %s
+                      AND factor_key = %s
                       AND execution_id = %s
                       AND status = 'active'
                     """,
@@ -124,10 +124,10 @@ class FactorRepository:
                         print(f"    🔄 Updating {factor_key} - value changed")
                         cursor.execute(
                             """
-                            UPDATE factor 
-                            SET value = %s, 
+                            UPDATE factor
+                            SET value = %s,
                                 factor_hash = %s,
-                                updated_at = %s, 
+                                updated_at = %s,
                                 updated_by = %s
                             WHERE id = %s
                             """,
@@ -215,12 +215,12 @@ class FactorRepository:
             if underwriting_processor_id:
                 cursor.execute(
                     """
-                    SELECT 
+                    SELECT
                         id, factor_key, value, unit, source, status,
                         underwriting_processor_id, execution_id,
                         created_at, updated_at
                     FROM factor
-                    WHERE underwriting_id = %s 
+                    WHERE underwriting_id = %s
                       AND underwriting_processor_id = %s
                       AND status = 'active'
                     ORDER BY created_at DESC
@@ -230,12 +230,12 @@ class FactorRepository:
             else:
                 cursor.execute(
                     """
-                    SELECT 
+                    SELECT
                         id, factor_key, value, unit, source, status,
                         underwriting_processor_id, execution_id,
                         created_at, updated_at
                     FROM factor
-                    WHERE underwriting_id = %s 
+                    WHERE underwriting_id = %s
                       AND status = 'active'
                     ORDER BY created_at DESC
                     """,
@@ -292,10 +292,10 @@ class FactorRepository:
 
             cursor.execute(
                 """
-                UPDATE factor 
+                UPDATE factor
                 SET status = 'deleted', updated_at = %s, updated_by = %s
-                WHERE underwriting_id = %s 
-                  AND underwriting_processor_id = %s 
+                WHERE underwriting_id = %s
+                  AND underwriting_processor_id = %s
                   AND status = 'active'
                 """,
                 (now, updated_by, underwriting_id, underwriting_processor_id),

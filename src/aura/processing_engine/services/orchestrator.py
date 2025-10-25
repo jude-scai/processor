@@ -4,8 +4,7 @@ Orchestrator Service
 Main orchestration service that coordinates processor execution workflows.
 """
 
-from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from ..repositories import (
     ProcessorRepository,
@@ -78,14 +77,7 @@ class Orchestrator:
 
         print("Step 1: Filtration")
         print("-" * 70)
-        filtration_start = datetime.now()
-
-        filtration_result = filtration(
-            underwriting_id=underwriting_id,
-        )
-        filtration_time = int(
-            (datetime.now() - filtration_start).total_seconds() * 1000
-        )
+        filtration_result = filtration(underwriting_id=underwriting_id)
 
         processor_list = filtration_result["processor_list"]
         execution_list = filtration_result["execution_list"]
@@ -112,11 +104,7 @@ class Orchestrator:
 
         print("Step 2: Execution")
         print("-" * 70)
-        execution_start = datetime.now()
-        execution_result = execution(
-            execution_list=execution_list,
-        )
-        execution_time = int((datetime.now() - execution_start).total_seconds() * 1000)
+        execution_result = execution(execution_list=execution_list)
 
         print(f"  Executions completed: {execution_result['completed']}")
         print(f"  Executions failed: {execution_result['failed']}")
@@ -124,13 +112,7 @@ class Orchestrator:
 
         print("Step 3: Consolidation")
         print("-" * 70)
-        consolidation_start = datetime.now()
-        consolidation_result = consolidation(
-            processor_list=processor_list,
-        )
-        consolidation_time = int(
-            (datetime.now() - consolidation_start).total_seconds() * 1000
-        )
+        consolidation_result = consolidation(processor_list=processor_list)
 
         print(f"  Processors consolidated: {consolidation_result['consolidated']}")
         print()
@@ -209,12 +191,13 @@ class Orchestrator:
                     f"Underwriting processor not found: {underwriting_processor_id}"
                 )
 
-            underwriting_id = processor_config["underwriting_id"]
             underwriting_data = self.underwriting_repo.get_underwriting_with_details(
-                underwriting_id
+                processor_config["underwriting_id"]
             )
             if not underwriting_data:
-                raise ValueError(f"Underwriting not found: {underwriting_id}")
+                raise ValueError(
+                    f"Underwriting not found: {processor_config['underwriting_id']}"
+                )
 
             execution_list_to_run = []
             processor_list_to_consolidate = [underwriting_processor_id]
@@ -245,7 +228,7 @@ class Orchestrator:
                     self.execution_repo.mark_execution_superseded(
                         existing_execution["id"], new_execution_id
                     )
-                    print(f"    🔄 EXECUTION SUPERSEDED (Scenario 1)")
+                    print("    🔄 EXECUTION SUPERSEDED (Scenario 1)")
                     print(f"        OLD EXECUTION: {existing_execution['id']}")
                     print(f"        NEW EXECUTION: {new_execution_id}")
                 else:
@@ -260,7 +243,7 @@ class Orchestrator:
                 results["scenario"] = "Scenario 3: Selective data execution"
                 # Construct a temporary payload for this specific run
                 temp_payload = {
-                    "underwriting_id": underwriting_id,
+                    "underwriting_id": processor_config["underwriting_id"],
                     "underwriting_processor_id": underwriting_processor_id,
                     "application_form": (
                         application_form
@@ -327,7 +310,7 @@ class Orchestrator:
                                             old_exec["id"], new_exec_id
                                         )
                                         print(
-                                            f"    🔄 EXECUTION SUPERSEDED (Scenario 2)"
+                                            "    🔄 EXECUTION SUPERSEDED (Scenario 2)"
                                         )
                                         print(
                                             f"        OLD EXECUTION: {old_exec['id']}"
@@ -415,7 +398,6 @@ class Orchestrator:
                     f"Underwriting processor not found: {underwriting_processor_id}"
                 )
 
-            underwriting_id = processor_config["underwriting_id"]
             processor_list_to_consolidate = [underwriting_processor_id]
 
             # Step 1: Consolidation

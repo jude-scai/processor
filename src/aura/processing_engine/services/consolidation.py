@@ -12,6 +12,8 @@ from ..repositories import (
     FactorRepository,
 )
 from .registry import get_registry
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 
 def consolidation(
@@ -32,14 +34,25 @@ def consolidation(
     Returns:
         Consolidation results with counts
     """
-    # Instantiate repositories directly
-    processor_repo = ProcessorRepository()
-    execution_repo = ExecutionRepository()
-    factor_repo = FactorRepository()
+    # Get database connection
+    db_connection = psycopg2.connect(
+        host="localhost",
+        port=5432,
+        database="aura_underwriting",
+        user="aura_user",
+        password="aura_password",
+        cursor_factory=RealDictCursor,
+    )
 
-    # Initialize factor_repo with database connection from processor_repo
-    if hasattr(processor_repo, "db") and processor_repo.db is not None:
-        factor_repo.__init__(processor_repo.db)
+    # Instantiate repositories and set database connection
+    processor_repo = ProcessorRepository()
+    processor_repo.__init__(db_connection)
+
+    execution_repo = ExecutionRepository()
+    execution_repo.__init__(db_connection)
+
+    factor_repo = FactorRepository()
+    factor_repo.__init__(db_connection)
 
     results = []
 
@@ -55,8 +68,6 @@ def consolidation(
                 print("    ⚠️  Processor config not found")
                 continue
 
-            processor_name = processor_config["processor"]
-
             active_executions = execution_repo.get_active_executions(
                 underwriting_processor_id=underwriting_processor_id
             )
@@ -69,11 +80,17 @@ def consolidation(
                 print(f"    Active executions: {len(active_executions)}")
 
             processor_registry = get_registry()
-            if not processor_registry.is_processor_registered(processor_name):
-                print(f"    ⚠️  Processor not registered: {processor_name}")
+            if not processor_registry.is_processor_registered(
+                processor_config["processor"]
+            ):
+                print(
+                    f"    ⚠️  Processor not registered: {processor_config['processor']}"
+                )
                 continue
 
-            processor_class = processor_registry.get_processor(processor_name)
+            processor_class = processor_registry.get_processor(
+                processor_config["processor"]
+            )
 
             # Extract factors from each execution's factors_delta
             factors_list: list[dict[str, Any]] = []
@@ -97,9 +114,6 @@ def consolidation(
 
             # Save factors to database
             if consolidated_factors:
-                # Get organization_id and underwriting_id from processor config
-                organization_id = processor_config.get("organization_id")
-                underwriting_id = processor_config.get("underwriting_id")
 
                 # Get the latest execution_id for lineage tracking
                 latest_execution_id = None
@@ -109,8 +123,8 @@ def consolidation(
                         latest_execution_id = first_execution.get("id")
 
                 success = factor_repo.save_factors(
-                    organization_id=organization_id,
-                    underwriting_id=underwriting_id,
+                    organization_id=processor_config.get("organization_id"),
+                    underwriting_id=processor_config.get("underwriting_id"),
                     underwriting_processor_id=underwriting_processor_id,
                     execution_id=latest_execution_id,
                     factors=consolidated_factors,
@@ -128,7 +142,7 @@ def consolidation(
                 {
                     "success": True,
                     "underwriting_processor_id": underwriting_processor_id,
-                    "processor": processor_name,
+                    "processor": processor_config["processor"],
                     "factors": consolidated_factors,
                     "execution_count": len(active_executions),
                 }

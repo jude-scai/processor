@@ -65,11 +65,10 @@ def filtration(
             print("    ℹ️  No triggers matched - skipped")
         elif isinstance(preparation, list):
             if len(preparation) == 0:
-                skipped_count = len(processor_config.get("current_executions_list", []))
                 print("    ✅ Triggers matched, no new executions needed")
-                if skipped_count > 0:
+                if len(processor_config.get("current_executions_list", [])) > 0:
                     print(
-                        f"       Skipped {skipped_count} existing execution(s) (already completed)"
+                        f"       Skipped {len(processor_config.get('current_executions_list', []))} existing execution(s) (already completed)"
                     )
             else:
                 print(f"    ✅ Triggers matched, {len(preparation)} new execution(s)")
@@ -123,10 +122,12 @@ def prepare_processor(
 
     if not payload_list:
         # Check if there are existing executions to remove
-        current_executions = ExecutionRepository().get_active_executions(
-            underwriting_processor_id
-        )
-        current_execution_ids = [ex["id"] for ex in current_executions]
+        current_execution_ids = [
+            ex["id"]
+            for ex in ExecutionRepository().get_active_executions(
+                underwriting_processor_id
+            )
+        ]
 
         if current_execution_ids:
             # Remove existing executions since no new ones are needed
@@ -153,11 +154,10 @@ def prepare_processor(
         for payload in payload_list
     ]
 
-    current_executions = ExecutionRepository().get_active_executions(
-        underwriting_processor_id
-    )
-
-    current_execution_ids = [ex["id"] for ex in current_executions]
+    current_execution_ids = [
+        ex["id"]
+        for ex in ExecutionRepository().get_active_executions(underwriting_processor_id)
+    ]
 
     new_exe_list = [eid for eid in execution_list if eid not in current_execution_ids]
     del_exe_list = [eid for eid in current_execution_ids if eid not in execution_list]

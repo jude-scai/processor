@@ -119,16 +119,13 @@ class BaseProcessor(ABC):
                 "Set _underwriting_processor_id before calling get_config()."
             )
 
-        # Start with system defaults from processor class
-        default_config = self.CONFIG if hasattr(self, "CONFIG") else {}
-
         # Get effective config from database (tenant + underwriting overrides)
         db_config = self._processor_repo.get_effective_config(
             self._underwriting_processor_id
         )
 
         # Merge: system defaults < database config
-        return {**default_config, **db_config}
+        return {**(self.CONFIG if hasattr(self, "CONFIG") else {}), **db_config}
 
     # =====================================================================
     # STATIC METHODS (Optional overrides)
@@ -234,9 +231,8 @@ class BaseProcessor(ABC):
             document_ids: List of base document IDs (not revision IDs)
         """
         if document_ids:
-            sorted_ids = sorted(list(set(document_ids)))
             self._document_ids_hash = hashlib.sha256(
-                json.dumps(sorted_ids).encode("utf-8")
+                json.dumps(sorted(list(set(document_ids)))).encode("utf-8")
             ).hexdigest()
         else:
             self._document_ids_hash = None

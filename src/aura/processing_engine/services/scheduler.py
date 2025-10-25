@@ -59,9 +59,7 @@ class UnderwritingScheduler:
                         work_item = self._get_next_work(underwriting_id)
                         if work_item:
                             # Submit to thread pool
-                            future = self._executor.submit(
-                                self._process_work_item, work_item
-                            )
+                            self._executor.submit(self._process_work_item, work_item)
 
                     time.sleep(0.1)  # Small delay to prevent busy waiting
                 except Exception as e:
@@ -107,8 +105,7 @@ class UnderwritingScheduler:
                 self._queue_locks[underwriting_id] = threading.Lock()
 
         # Add work to queue
-        queue_lock = self._queue_locks[underwriting_id]
-        with queue_lock:
+        with self._queue_locks[underwriting_id]:
             self._queues[underwriting_id].put(work_item)
 
         print(
@@ -121,11 +118,9 @@ class UnderwritingScheduler:
         if underwriting_id not in self._queues:
             return None
 
-        queue_lock = self._queue_locks[underwriting_id]
-        with queue_lock:
+        with self._queue_locks[underwriting_id]:
             try:
-                work_item = self._queues[underwriting_id].get_nowait()
-                return work_item
+                return self._queues[underwriting_id].get_nowait()
             except queue.Empty:
                 return None
 

@@ -117,9 +117,7 @@ if processors_dir.exists():
 
         relative_path = py_file.relative_to(processors_dir)
         module_parts = list(relative_path.parts[:-1]) + [relative_path.stem]
-        module_path = ".".join(module_parts)
-
-        full_module_path = f"..processors.{module_path}"
+        full_module_path = f"..processors.{'.'.join(module_parts)}"  # pylint: disable=invalid-name
 
         try:
             module = importlib.import_module(full_module_path, package=__package__)
