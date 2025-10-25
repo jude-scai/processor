@@ -1,0 +1,44 @@
+---
+alwaysApply: true
+apply:
+  - "**/*"
+---
+
+# Git Guidelines (Commit, Branching, PRs)
+
+Use these concise conventions for all Git work. For external standards (Conventional Commits, SemVer, GitHub Flow), consult Context7 before deviating.
+
+## Commit Messages (Conventional Commits)
+- Format: `type(scope)!: short summary`
+  - Types: `feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert`
+  - `!` for breaking change; add `BREAKING CHANGE:` in footer
+- Summary: imperative mood, ≤ 72 chars
+- Body: what/why (wrap at 72), link issues (e.g., `Closes #123`)
+- Footer: co-authors, `BREAKING CHANGE: ...`, references
+- Prefer small, atomic commits; avoid `wip:` commits
+
+## Branching
+- Default branch: `master`
+- Short-lived branches; prefer GitHub Flow
+- Naming: `feat/<ticket-or-topic>`, `fix/<issue-#>-<topic>`, `chore/<topic>`, `docs/<topic>`
+- Rebase onto `master` before PR; keep history linear when possible
+
+## Pull Requests
+- Title mirrors intended squash commit using Conventional Commits
+- Description: problem, approach, alternatives, risks, screenshots (if UI)
+- Link issues (e.g., `Closes #123`) and include migration/rollback notes if any
+- Keep PRs focused and reviewable (< ~300 lines diff where possible)
+
+## History & Hygiene
+- Prefer `rebase` over merge bubbles for feature branches; `merge --ff-only` to master
+- Do not force-push `master`; protect with required CI checks
+- Commit only project files; respect `.gitignore`
+
+## Releases & Versioning
+- Semantic Versioning: `MAJOR.MINOR.PATCH`
+- Tag releases: `vX.Y.Z`; generate notes from Conventional Commits
+- Use `feat` and `fix` to drive `minor`/`patch`; `BREAKING CHANGE` drives `major`
+
+## Best Prompt (Context7)
+"When crafting commit messages, PRs, or branching strategies, follow Conventional Commits, Semantic Versioning, and GitHub Flow. If unsure, use Context7 MCP to retrieve their current guidelines. Ensure commit subjects are imperative and ≤72 chars, bodies explain why, and PR titles match the conventional summary."
+
