@@ -134,6 +134,12 @@ class TriggerWorkflow5Request(BaseModel):
     execution_id: str
 
 
+class EnableProcessorRequest(BaseModel):
+    """Request to enable a disabled underwriting processor."""
+
+    underwriting_processor_id: str
+
+
 # ============================================================================
 # API Endpoints
 # ============================================================================
@@ -153,6 +159,7 @@ def root():
             "POST /trigger/workflow3": "Trigger Workflow 3 (processor.consolidation) - Consolidation only, no execution",
             "POST /trigger/workflow4": "Trigger Workflow 4 (execution.activate)",
             "POST /trigger/workflow5": "Trigger Workflow 5 (execution.disable)",
+            "POST /processors/enable": "Enable a disabled underwriting processor",
             "GET /health": "Health check",
         },
     }
@@ -322,6 +329,26 @@ def trigger_workflow5(request: TriggerWorkflow5Request):
             "topic": "underwriting.execution.disable",
             "message_id": message_id,
             "payload": {"execution_id": request.execution_id},
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/processors/enable")
+def enable_processor(request: EnableProcessorRequest):
+    """Trigger processor enable event (underwriting.processor.enable)."""
+    try:
+        message_id = publish_message(
+            topic_name="underwriting.processor.enable",
+            data={"underwriting_processor_id": request.underwriting_processor_id},
+        )
+
+        return {
+            "success": True,
+            "workflow": "Processor Enable",
+            "topic": "underwriting.processor.enable",
+            "message_id": message_id,
+            "payload": {"underwriting_processor_id": request.underwriting_processor_id},
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

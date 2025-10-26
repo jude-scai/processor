@@ -4,6 +4,7 @@ Orchestrator Service
 Main orchestration service that coordinates processor execution workflows.
 """
 
+from multiprocessing.spawn import prepare
 from typing import Any
 
 from ..repositories import (
@@ -12,7 +13,7 @@ from ..repositories import (
     UnderwritingRepository,
 )
 from ..base_processor import BaseProcessor
-from .filtration import filtration
+from .filtration import filtration, prepare_processor
 from .execution import execution
 from .consolidation import consolidation
 from .registry import get_registry
@@ -21,7 +22,7 @@ from .registry import get_registry
 class Orchestrator:
     """
     Main orchestration service for processor execution workflows.
-
+  
     Coordinates the complete lifecycle of processor execution from event reception
     through filtration, execution, and consolidation.
     """
@@ -425,6 +426,182 @@ class Orchestrator:
             "details": results,
         }
 
+    def uw_execution_activate(self, execution_id: str) -> dict[str, Any]:
+        """
+        Activate an execution for a given underwriting processor.
+
+        Args:
+            execution_id: The execution to activate
+
+        Returns:
+            Activation results
+        """
+
+        #get execution
+        execution = self.execution_repo.get_execution_by_id(execution_id)
+
+        if not execution:
+            raise ValueError(f"Execution not found: {execution_id}")
+
+        if execution["status"] != "completed":
+            raise ValueError(f"Execution is not completed: {execution_id}")
+
+        #get underwriting processor
+        uw_processor_id = execution["underwriting_processor_id"]
+
+        #activate executions
+        activate_execution = self.execution_repo.activate_execution(uw_processor_id)
+        if not activate_execution:
+            raise ValueError(f"Failed to activate execution: {execution_id}")
+
+        #get processor config
+        processor_config = self.processor_repo.get_underwriting_processor_by_id(
+            uw_processor_id
+        )
+        
+        if not processor_config:
+            raise ValueError(f"Underwriting processor not found: {uw_processor_id}")
+
+        #get processor class
+        processor_class = get_registry().get_processor(processor_config["processor"])
+        if not processor_class:
+            raise ValueError(f"Processor not found: {processor_config["processor"]}")
+
+        #get processor type
+        processor_type = processor_class.PROCESSOR_TYPE.value
+        if not processor_type:
+            raise ValueError(f"Processor type not found: {processor_config["processor"]}")
+
+        """
+        Processor Type Logic:
+        - Application Type:
+        - Clear current execution list completely.
+        - Insert the new execution as current.
+
+        - Stipulation Type:
+        - Clear current execution list completely.
+        - Insert the new execution as current.
+
+        - Document Type:
+        - Get execution by ID.
+        - Find any current execution with the same document_id.
+        - If exists: Delete the existing current execution.
+        - Insert the new execution as current.
+        """
+
+        
+
+    def uw_execution_disable(self, execution_id: str) -> dict[str, Any]:
+        """
+        Disable an execution for a given underwriting processor.
+
+        Args:
+            execution_id: The execution to disable
+
+        Returns:
+            Disable results
+        """
+
+        #get execution
+        execution = self.execution_repo.get_execution_by_id(execution_id)
+        if not execution:
+            raise ValueError(f"Execution not found: {execution_id}")
+        
+        if execution["status"] != "completed":
+            raise ValueError(f"Execution is not completed: {execution_id}")
+
+        uw_processor_id = execution["underwriting_processor_id"]
+        if not uw_processor_id:
+            raise ValueError(f"Underwriting processor id not found in execution: {execution}")
+
+        uw_processor = self.processor_repo.get_underwriting_processor_by_id(uw_processor_id)
+        if not uw_processor:
+            raise ValueError(f"Underwriting processor not found: {uw_processor_id}")
+
+        execution_list = uw_processor["current_executions_list"]
+        if not execution_list:
+            raise ValueError(f"Execution list not found: {uw_processor_id}")
+
+        #disable executions
+        deactivate_executions = self.execution_repo.deactivate_executions(execution_list)
+        if not deactivate_executions:
+            raise ValueError(f"Failed to deactivate executions: {execution_list}")
+
+        #clear current executions list
+        clear_current_executions = self.processor_repo.update_current_executions_list(uw_processor_id, [])
+        if not clear_current_executions:
+            raise ValueError(f"Failed to clear current executions: {uw_processor_id}")
+
+        #consolidate
+        consolidate = consolidation(processor_list=[uw_processor_id])
+        if not consolidate:
+            raise ValueError(f"Failed to consolidate: {uw_processor_id}")
+
+        return {
+            "success": True,
+            "deactivate_executions": execution_list,
+            "clear_current_executions": clear_current_executions,
+            "consolidate": consolidate,
+        }
+
+    def handle_processor_enable(self, underwriting_processor_id: str) -> dict[str, Any]:
+        """
+        Enable a disabled underwriting processor.
+
+        Args:
+            underwriting_processor_id: The underwriting processor to enable
+
+        Returns:
+            Enable results with consolidation and optionally execution results
+        """
+        # Get processor configuration
+        processor = self.processor_repo.get_underwriting_processor_by_id(underwriting_processor_id)
+        if not processor:
+            raise ValueError(f"Underwriting processor not found: {underwriting_processor_id}")
+
+        results = {"success": True}
+
+        # Non-auto processors: only consolidate (no new executions)
+        if processor.get('auto') == False:
+            consolidate_result = consolidation(processor_list=[underwriting_processor_id])
+            if not consolidate_result:
+                raise ValueError(f"Failed to consolidate: {underwriting_processor_id}")
+            results["consolidate_result"] = consolidate_result
+            return results
+
+        # Auto processors: prepare, execute, then consolidate
+        underwriting_data = self.underwriting_repo.get_underwriting_with_details(
+            processor['underwriting_id']
+        )
+        if not underwriting_data:
+            raise ValueError(f"Underwriting data not found: {processor['underwriting_id']}")
+
+        # Prepare executions
+        execution_list = prepare_processor(
+            underwriting_processor_id=underwriting_processor_id,
+            underwriting_data=underwriting_data,
+            processor_config=processor,
+            duplicate=False
+        )
+
+        # Execute if new executions were prepared
+        if execution_list:
+            execution_result = execution(execution_list=execution_list)
+            if not execution_result:
+                raise ValueError(f"Failed to execute: {execution_list}")
+            results["execution_result"] = execution_result
+            results["executions_created"] = len(execution_list)
+        else:
+            print("  No new executions needed")
+            results["executions_created"] = 0
+
+        # Consolidate results
+        consolidate_result = consolidation(processor_list=[underwriting_processor_id])
+        if not consolidate_result:
+            raise ValueError(f"Failed to consolidate: {underwriting_processor_id}")
+        results["consolidate_result"] = consolidate_result
+
+        return results
 
 def create_orchestrator(db_connection: Any) -> Orchestrator:
     """

@@ -535,50 +535,68 @@ class ExecutionRepository:
     # ACTIVATION/DEACTIVATION
     # =========================================================================
 
-    def activate_execution(self, execution_id: str) -> bool:
+    def activate_execution(
+        self, underwriting_processor_id: str, execution_list: list[str]
+    ) -> bool:
         """
-        Activate an execution (set enabled = true).
-
+        Activate executions based on processor type and execution list.
+        
+        This implements the "Activate Executions" workflow:
+        - Application/Stipulation: Clear current_executions_list, insert new execution
+        - Document: Clear executions with same document_id, insert new execution
+        
         Args:
-            execution_id: Execution UUID
-
+            underwriting_processor_id: The underwriting processor ID
+            execution_list: List of execution IDs to activate
+            
         Returns:
             True if activation successful
         """
-        query = """
-        UPDATE processor_executions
-        SET
-            enabled = true,
-            updated_at = %s
-        WHERE id = %s
-        """
-        # TODO: Execute update with db connection
-        # self.db.execute(query, (datetime.utcnow(), execution_id))
-        # return True
-        return False
 
-    def deactivate_execution(self, execution_id: str) -> bool:
+    def deactivate_executions(self, execution_list: list[str]) -> bool:
         """
-        Deactivate an execution (set enabled = false).
+        Deactivate executions (set enabled = false).
 
         Args:
-            execution_id: Execution UUID
+            execution_list: List of execution UUIDs to deactivate
 
         Returns:
-            True if deactivation successful
+            True if deactivation successful, False otherwise.
         """
-        query = """
-        UPDATE processor_executions
-        SET
-            enabled = false,
-            disabled_at = %s,
-            updated_at = %s
-        WHERE id = %s
-        """
-        # TODO: Execute update with db connection
-        # self.db.execute(query, (datetime.utcnow(), datetime.utcnow(), execution_id))
-        # return True
-        return False
+        if not execution_list:
+            return False
+
+        cursor = None
+
+        try:
+            cursor = self.db.cursor()
+
+            query = """
+            UPDATE processor_executions
+            SET
+                enabled = FALSE,
+                disabled_at = %s,
+                updated_at = %s
+            WHERE id = ANY(%s::uuid[])
+            """
+
+            now = datetime.utcnow()
+
+            cursor.execute(query, (now, now, execution_list))
+
+            self.db.commit()
+            return True
+
+        except Exception as e:
+            print(f"Error deactivating executions: {e}")
+            if self.db:
+                self.db.rollback()
+            return False
+
+        finally:
+            if cursor:
+                cursor.close()
+
 
     # =========================================================================
     # HELPER METHODS

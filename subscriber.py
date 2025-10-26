@@ -292,6 +292,156 @@ def handle_underwriting_processor_consolidation(message):
             print("   ⚠️  Permanent error - skipping message (ACK)", flush=True)
             message.ack()
 
+def handle_underwriting_execution_activate(message):
+    """Handle underwriting.execution.activate event (Workflow 4)."""
+    try:
+        data = json.loads(message.data.decode("utf-8"))
+        execution_id = data.get("execution_id")
+
+        print(f"\n{'='*70}", flush=True)
+        print(f"📨 Received: underwriting.execution.activate", flush=True)
+        print(f"   Execution ID: {execution_id}", flush=True)
+        print(f"{'='*70}", flush=True)
+
+        # Create orchestrator and execute workflow 4 (execution activation)
+        conn = get_db_connection()
+        orchestrator = create_orchestrator(conn)
+        result = orchestrator.uw_execution_activate(execution_id)
+        conn.close()
+
+        print(result, 'asd')
+
+        print(f"\n✅ Workflow 4 completed", flush=True)
+        print(f"   Success: {result.get('success', False)}", flush=True)
+        print(f"   Processor Type: {result.get('processor_type')}", flush=True)
+        print(f"   Data Restored: {result.get('data_restored', False)}", flush=True)
+
+        message.ack()
+    except Exception as e:
+        print(f"\n❌ Error processing underwriting.execution.activate: {e}", flush=True)
+        import traceback
+
+        traceback.print_exc()
+
+        # Determine if error is transient or permanent
+
+        error_str = str(e).lower()
+        transient_errors = [
+            "connection",
+            "timeout",
+            "network",
+            "temporarily unavailable",
+            "resource temporarily unavailable",
+        ]
+
+        is_transient = any(err in error_str for err in transient_errors)
+
+        if is_transient:
+            print("   ⚠️  Transient error - will retry (NACK)", flush=True)
+            message.nack()
+        else:
+            print("   ⚠️  Permanent error - skipping message (ACK)", flush=True)
+            message.ack()
+
+def handle_processor_enable(message):
+    """Handle underwriting.processor.enable event."""
+    try:
+        data = json.loads(message.data.decode("utf-8"))
+        underwriting_processor_id = data.get("underwriting_processor_id")
+
+        print(f"\n{'='*70}", flush=True)
+        print(f"📨 Received: underwriting.processor.enable", flush=True)
+        print(f"   Underwriting Processor ID: {underwriting_processor_id}", flush=True)
+        print(f"{'='*70}", flush=True)
+
+        # Create orchestrator and delegate to handle_processor_enable
+        conn = get_db_connection()
+        orchestrator = create_orchestrator(conn)
+        result = orchestrator.handle_processor_enable(underwriting_processor_id)
+        conn.close()
+
+        print(f"\n✅ Processor enabled", flush=True)
+        print(f"   Success: {result.get('success', False)}", flush=True)
+        if result.get('processor_id'):
+            print(f"   Processor ID: {result.get('processor_id')}", flush=True)
+        if result.get('name'):
+            print(f"   Name: {result.get('name')}", flush=True)
+        if result.get('enabled'):
+            print(f"   Enabled: {result.get('enabled')}", flush=True)
+
+        message.ack()
+    except Exception as e:
+        print(f"\n❌ Error processing underwriting.processor.enable: {e}", flush=True)
+        import traceback
+
+        traceback.print_exc()
+
+        # Determine if error is transient or permanent
+        error_str = str(e).lower()
+        transient_errors = [
+            "connection",
+            "timeout",
+            "network",
+            "temporarily unavailable",
+            "resource temporarily unavailable",
+        ]
+
+        is_transient = any(err in error_str for err in transient_errors)
+
+        if is_transient:
+            print("   ⚠️  Transient error - will retry (NACK)", flush=True)
+            message.nack()
+        else:
+            print("   ⚠️  Permanent error - skipping message (ACK)", flush=True)
+            message.ack()
+
+
+def handle_underwriting_execution_disable(message):
+    """Handle underwriting.execution.disable event (Workflow 5)."""
+    try:
+        data = json.loads(message.data.decode("utf-8"))
+        execution_id = data.get("execution_id")
+        
+        print(f"\n{'='*70}", flush=True)
+        print(f"📨 Received: underwriting.execution.disable", flush=True)
+        print(f"   Execution ID: {execution_id}", flush=True)
+        print(f"{'='*70}", flush=True)
+
+        # Create orchestrator and execute workflow 5 (execution disable)
+        conn = get_db_connection()
+        orchestrator = create_orchestrator(conn)
+        result = orchestrator.uw_execution_disable(execution_id)
+        conn.close()
+
+        print(f"\n✅ Workflow 5 completed", flush=True)
+        print(f"   Success: {result.get('success', False)}", flush=True)
+
+        message.ack()
+    except Exception as e:
+        print(f"\n❌ Error processing underwriting.execution.disable: {e}", flush=True)
+        import traceback
+
+        traceback.print_exc()
+
+        # Determine if error is transient or permanent
+        error_str = str(e).lower()
+        transient_errors = [
+            "connection",
+            "timeout",
+            "network",
+            "temporarily unavailable",
+            "resource temporarily unavailable",
+        ]
+
+        is_transient = any(err in error_str for err in transient_errors)
+
+        if is_transient:
+            print("   ⚠️  Transient error - will retry (NACK)", flush=True)
+            message.nack()
+        else:
+            print("   ⚠️  Permanent error - skipping message (ACK)", flush=True)
+            message.ack()
+
 
 def main():
     """Start Pub/Sub subscriber."""
@@ -307,7 +457,9 @@ def main():
       - document.analyzed (Workflow 1)
       - underwriting.processor.execute (Workflow 2)
       - underwriting.processor.consolidation (Workflow 3)
-
+      - underwriting.execution.activate (Workflow 4)
+      - underwriting.execution.disable (Workflow 5)
+      - underwriting.processor.enable
     Press Ctrl+C to stop...
     """,
         flush=True,
@@ -323,6 +475,9 @@ def main():
         "document.analyzed": handle_document_analyzed,
         "underwriting.processor.execute": handle_underwriting_processor_execute,
         "underwriting.processor.consolidation": handle_underwriting_processor_consolidation,
+        "underwriting.execution.activate": handle_underwriting_execution_activate,
+        'underwriting.execution.disable': handle_underwriting_execution_disable,
+        "underwriting.processor.enable": handle_processor_enable,
     }
 
     # Create topics and subscriptions
